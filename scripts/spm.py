@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-GLOBAL_SKILLS_DIR = os.path.join(os.path.expanduser("~/.skills"), "skills")
+GLOBAL_SKILLS_DIR = os.path.join(os.path.expanduser("~/.spm"), "skills")
 SPM_JSON = "skills.json"
 PROJECT_ROOT_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml"]
 
@@ -290,7 +290,7 @@ def cmd_remove(skill_name):
 
 def cmd_sync():
     """Pull latest skills from the remote registry."""
-    repo_dir = os.path.expanduser("~/.skills")
+    repo_dir = os.path.expanduser("~/.spm")
     if not os.path.isdir(repo_dir):
         print(f"❌ Registry not found: {repo_dir}")
         print(f"   Clone your skills repo there first:")
