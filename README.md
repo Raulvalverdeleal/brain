@@ -15,7 +15,7 @@ Skills live in your project under `.agents/skills/` — tracked in `skills.json`
 ### 1. Clone the registry
 
 ```bash
-git clone https://github.com/your-org/agent-skills ~/.spm
+git clone https://github.com/Raulvalverdeleal/skill-package-manager ~/.spm
 ```
 
 This is your local registry. All available skills live in `~/.spm/skills/`.
@@ -118,7 +118,7 @@ Skills are intentionally project-local — you only include what your project ne
 ## Repo structure
 
 ```
-agent-skills/
+skill-package-manager/
 ├── scripts/
 │   ├── spm.py        ← skill package manager CLI
 │   └── check.py      ← validates skill frontmatter
