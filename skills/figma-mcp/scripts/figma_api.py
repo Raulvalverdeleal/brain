@@ -74,6 +74,32 @@ def get(path):
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
+        if e.code == 429:
+            # Extract rate-limit details from response headers
+            retry_after  = e.headers.get("Retry-After")
+            limit        = e.headers.get("X-RateLimit-Limit")
+            remaining    = e.headers.get("X-RateLimit-Remaining")
+            reset_epoch  = e.headers.get("X-RateLimit-Reset")
+
+            details = ["Rate limit exceeded (HTTP 429)."]
+            details.append("Figma allows ~60 req/min on paid plans, fewer on free plans.")
+            if limit:
+                details.append(f"  Limit:     {limit} requests/min")
+            if remaining is not None:
+                details.append(f"  Remaining: {remaining} requests")
+            if reset_epoch:
+                import datetime
+                try:
+                    reset_dt = datetime.datetime.fromtimestamp(int(reset_epoch), tz=datetime.timezone.utc)
+                    now      = datetime.datetime.now(tz=datetime.timezone.utc)
+                    wait_sec = max(0, int((reset_dt - now).total_seconds()))
+                    details.append(f"  Resets at: {reset_dt.strftime('%H:%M:%S UTC')} (~{wait_sec}s from now)")
+                except ValueError:
+                    details.append(f"  Resets at: {reset_epoch} (epoch)")
+            if retry_after:
+                details.append(f"  Retry-After: {retry_after}s")
+            details.append("Tip: batch node IDs in a single call to reduce request count.")
+            raise Exception("\n".join(details))
         raise Exception(f"HTTP {e.code} {e.reason}: {body}")
 
 def parallel(*paths):
