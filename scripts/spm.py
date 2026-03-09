@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""
-spm - Skill Package Manager
-Usage:
-    spm install           Install all skills from skills.json
-    spm install <skill>   Install a skill and its dependencies
-    spm i                 Alias for install
-    spm i <skill>         Alias for install <skill>
-    spm remove <skill>    Remove a skill
-    spm rm <skill>        Alias for remove
-    spm sync              Pull latest skills from remote registry
-    spm list              List skills installed in current project
-    spm list --global     List all available skills in ~/.skills
-    spm search <query>    Search skills by name or description
-    spm info <skill>      Show skill frontmatter details
-"""
 
 import os
 import sys
@@ -25,6 +10,7 @@ from datetime import datetime, timezone
 # ── Config ────────────────────────────────────────────────────────────────────
 
 GLOBAL_SKILLS_DIR = os.path.join(os.path.expanduser("~/.spm"), "skills")
+AGENTS_MD = os.path.join(os.path.expanduser("~/.spm"), "AGENTS.md")
 SPM_JSON = "skills.json"
 PROJECT_ROOT_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml"]
 
@@ -383,6 +369,47 @@ def cmd_sync():
         print(f"❌ Sync failed:\n{result.stderr.strip()}")
 
 
+
+def cmd_get(resource):
+    """Get a resource from the spm registry."""
+    if resource != "agents":
+        print(f"❌ Unknown resource: '{resource}'")
+        print(f"   Available: agents")
+        return
+
+    if not os.path.isfile(AGENTS_MD):
+        print(f"❌ AGENTS.md not found at {AGENTS_MD}")
+        print(f"   Run 'spm sync' to update the registry.")
+        return
+
+    content = open(AGENTS_MD, "r", encoding="utf-8").read()
+
+    # Try clipboard — pbcopy (macOS) → xclip → xsel → wl-copy (Linux)
+    copied = False
+    for cmd, _ in [
+        (["pbcopy"],                          True),
+        (["xclip", "-selection", "clipboard"], True),
+        (["xsel", "--clipboard", "--input"],   True),
+        (["wl-copy"],                          True),
+    ]:
+        try:
+            result = subprocess.run(cmd, input=content.encode(), capture_output=True)
+            if result.returncode == 0:
+                copied = True
+                break
+        except FileNotFoundError:
+            continue
+
+    if copied:
+        lines = content.count("\n") + 1
+        print(f"📋 AGENTS.md copied to clipboard  ({lines} lines)")
+        print(f"   Paste it into your project root as AGENTS.md")
+    else:
+        # Fallback: print to stdout so the user can pipe it
+        print(content)
+        print(f"\n# ↑ AGENTS.md — no clipboard tool found, printed to stdout", file=sys.stderr)
+        print(f"# Pipe to a file:  spm get agents > AGENTS.md", file=sys.stderr)
+
 def cmd_list(global_flag):
     """List skills — project or global."""
     if global_flag:
@@ -512,6 +539,7 @@ HELP = """
     list --global         List all available skills in ~/.skills
     search <query>        Search skills by name or description
     info <skill>          Show skill details
+    get agents            Copy AGENTS.md to clipboard
 
   Examples:
     spm i figma-mcp
@@ -519,6 +547,7 @@ HELP = """
     spm search frontend
     spm list --global
     spm sync
+    spm get agents
 """
 
 def print_help():
@@ -555,6 +584,13 @@ def main():
             print("Usage: spm search <query>")
             return
         cmd_search(" ".join(args[1:]))
+
+    elif command == "get":
+        if len(args) < 2:
+            print("Usage: spm get <resource>")
+            print("       spm get agents")
+            return
+        cmd_get(args[1])
 
     elif command == "info":
         if len(args) < 2:
