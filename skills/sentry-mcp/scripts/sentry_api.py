@@ -6,8 +6,37 @@ from pathlib import Path
 
 ENV_VARS = ["SPM_SENTRY_TOKEN", "SPM_SENTRY_ORG", "SPM_SENTRY_PROJECT"]
 
+def _find_project_root():
+    """Walk up from cwd to find the project root (where .env lives)."""
+    current = os.path.abspath(os.getcwd())
+    drive = os.path.splitdrive(current)[0] + os.sep
+
+    # Pass 1: skills.json
+    path = current
+    while True:
+        if os.path.isfile(os.path.join(path, "skills.json")):
+            return path
+        parent = os.path.dirname(path)
+        if parent == path or path == drive:
+            break
+        path = parent
+
+    # Pass 2: common project root markers
+    path = current
+    while True:
+        for marker in (".git", "package.json", "pyproject.toml", "Cargo.toml"):
+            if os.path.exists(os.path.join(path, marker)):
+                return path
+        parent = os.path.dirname(path)
+        if parent == path or path == drive:
+            break
+        path = parent
+
+    return current
+
+
 def _load_env():
-    env_file = Path(__file__).parent.parent / ".env"
+    env_file = Path(_find_project_root()) / ".env"
     if not env_file.exists():
         return
     declared = {}

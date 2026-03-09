@@ -15,7 +15,7 @@ Never guess values — every color, size, font, and asset must come from the fil
 ## Before you start
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py list_tools   # confirm the script is reachable
+python3 scripts/figma_api.py list_tools   # confirm the script is reachable
 ```
 
 If it fails, check that `SPM_FIGMA_TOKEN` is set in the project `.env`.
@@ -27,7 +27,7 @@ If it fails, check that `SPM_FIGMA_TOKEN` is set in the project `.env`.
 **Goal:** understand the file structure before touching anything else.
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py get_design_context <file_key>
+python3 scripts/figma_api.py get_design_context <file_key>
 ```
 
 From the output, identify and note:
@@ -48,7 +48,7 @@ From the output, identify and note:
 **Goal:** get a PNG of each target frame before writing any code.
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_export_images <file_key> <frame_ids_csv> png 1
+python3 scripts/figma_api.py figma_export_images <file_key> <frame_ids_csv> png 1
 ```
 
 Download each URL immediately — they expire in ~30 min.
@@ -65,7 +65,7 @@ Do not proceed without a visual reference.
 **Goal:** extract all global values before writing a single line of CSS.
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_extract_styles <file_key>
+python3 scripts/figma_api.py figma_extract_styles <file_key>
 ```
 
 Map the output into a tokens file (`tokens.css`, `tokens.ts`, or equivalent):
@@ -99,7 +99,7 @@ Map the output into a tokens file (`tokens.css`, `tokens.ts`, or equivalent):
 **Goal:** know every reusable piece before building anything.
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_search_components <file_key>
+python3 scripts/figma_api.py figma_search_components <file_key>
 ```
 
 For each component set (variants), note:
@@ -109,13 +109,13 @@ For each component set (variants), note:
 Then inspect the ones you need to implement:
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_read_nodes <file_key> <component_ids_csv> 1
+python3 scripts/figma_api.py figma_read_nodes <file_key> <component_ids_csv> 1
 ```
 
 Start at `depth=1`. If a node shows `childCount > 0`, drill in:
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_read_nodes <file_key> <child_id> 2
+python3 scripts/figma_api.py figma_read_nodes <file_key> <child_id> 2
 ```
 
 > **Depth discipline — strictly follow this order:**
@@ -142,10 +142,10 @@ From Phase 4 node inspection, identify:
 
 ```bash
 # Vectors
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_export_images <file_key> <vector_ids_csv> svg
+python3 scripts/figma_api.py figma_export_images <file_key> <vector_ids_csv> svg
 
 # Raster images
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_export_images <file_key> <image_ids_csv> png 2
+python3 scripts/figma_api.py figma_export_images <file_key> <image_ids_csv> png 2
 ```
 
 Download all URLs immediately. Place assets in `assets/icons/` and `assets/images/`.
@@ -182,7 +182,7 @@ For each component:
 **Goal:** compose the full page using the components from Phase 6.
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_read_nodes <file_key> <screen_frame_id> 1
+python3 scripts/figma_api.py figma_read_nodes <file_key> <screen_frame_id> 1
 ```
 
 Read the top-level layout of the target screen at `depth=1`.
@@ -191,7 +191,7 @@ Map each direct child to a component or section from Phase 6.
 Then inspect each section individually:
 
 ```bash
-python .agents/skills/figma-mcp/scripts/figma_api.py figma_read_nodes <file_key> <section_id> 2
+python3 scripts/figma_api.py figma_read_nodes <file_key> <section_id> 2
 ```
 
 Implement the layout using the exact values from the node:

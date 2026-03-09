@@ -60,4 +60,17 @@ Notes are append-only — never delete an existing note, only add.
 - Prefer the more specific skill over a generic one when both apply.
 - Reading an extra SKILL.md costs little; missing a relevant one can cost a lot.
 - If a skill lists `env_vars` in `skills.json`, verify those variables are set in `.env` before running any script from that skill.
-- If you found a path 
+
+### Running skill scripts
+
+Scripts referenced in a SKILL.md use paths relative to the skill folder.
+To run them from the project root, prefix with `.agents/skills/<skill-name>/`:
+```bash
+# SKILL.md says:
+python3 scripts/figma_api.py list_tools
+
+# You run:
+python3 .agents/skills/figma-mcp/scripts/figma_api.py list_tools
+```
+
+Always use `python3`, not `python` — the `python` binary is not available on all systems.
