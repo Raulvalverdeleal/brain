@@ -1,16 +1,34 @@
 # Skill Package Manager
 
-A collection of ready-to-use skills & mcp for AI coding agents (Claude, Gemini, Cursor, Copilot, and others), with a built-in package manager to install and manage them per project.
+A registry of AI agent skills with a token-efficient MCP server for runtime access, and a CLI for registry management.
 
 Each skill is a folder with a `SKILL.md` that tells the agent how to approach a specific task — what tools to use, what patterns to follow, what to watch out for.
 
-**One standard format. Any model. Any IDE. Shared across your whole team.**
-
-Skills live in your project under `.agents/skills/` — tracked in `skills.json`, ignored by git. Everyone on the team installs the same skills, the agent always finds them in the same place, regardless of whether they're using Claude, Gemini, Cursor, or Copilot.
+**One standard format. Any model. Any IDE.**
 
 ---
 
-## How to use
+## How it works
+
+Skills live in `~/.spm/skills/`. Agents access them at runtime through an MCP server (`spm_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
+
+The CLI (`spm`) handles registry management: syncing from remote and searching for skills.
+
+```
+~/.spm/
+├── spm_mcp.py              ← MCP server (agent access layer)
+├── index.json              ← pre-built frontmatter index
+├── skills/                 ← all available skills
+│   ├── frontend-design/
+│   │   └── SKILL.md
+│   └── ...
+└── scripts/
+    └── build_index.py      ← called by spm sync to regenerate index.json
+```
+
+---
+
+## Setup
 
 ### 1. Clone the registry
 
@@ -18,11 +36,17 @@ Skills live in your project under `.agents/skills/` — tracked in `skills.json`
 git clone https://github.com/Raulvalverdeleal/skill-package-manager ~/.spm
 ```
 
-This is your local registry. All available skills live in `~/.spm/skills/`.
+### 2. Build the index
 
-### 2. Install `spm`
+```bash
+python3 ~/.spm/scripts/build_index.py
+```
 
-`spm` is the CLI that copies skills into your projects. Since it's already in the cloned repo, just make it available globally — pick whichever approach you prefer:
+This parses all skill frontmatters once and writes `~/.spm/index.json`. The MCP server loads this file at startup instead of scanning hundreds of files — startup goes from seconds to milliseconds.
+
+### 3. Install `spm`
+
+`spm` is the CLI for registry management. Make it available globally:
 
 **Option A — shell alias** (recommended):
 ```bash
@@ -36,154 +60,171 @@ ln -s ~/.spm/scripts/spm.py /usr/local/bin/spm
 chmod +x /usr/local/bin/spm
 ```
 
-> **Note:** `spm` requires Python 3. No dependencies beyond the standard library.
+> `spm` requires Python 3. No dependencies beyond the standard library.
 
-### 3. Install skills into a project
+### 4. Register the MCP server
 
-```bash
-cd your-project
-
-spm install figma-mcp       # installs the skill + its dependencies
-spm i figma-mcp             # same, shorter
-```
-
-This copies the skill into `.agents/skills/` at your project root, creates a `skills.json` for traceability, and adds `.agents/skills/` to `.gitignore` automatically.
-
-`spm` detects the project root automatically — you can run it from any subdirectory and it will always install to the right place.
-
-#### Environment variables
-
-Some skills require API tokens or other secrets. When a skill includes a `.env.example`, `spm` will print the required variables during install:
-
-```
-⚠️  'figma-mcp' requires environment variables.
-Add the following to your project's .env:
-
-    SPM_FIGMA_TOKEN=   # your Figma personal access token
-```
-
-The `.env.example` is never copied into your project — only the notice is shown. Add the variables to your `.env` manually before using the skill. All skill-owned variables are prefixed with `SPM_` to avoid conflicts.
-
-### 4. Share with your team
-
-Commit `skills.json` to your repo. Your teammates run:
-
-```bash
-spm install   # installs all skills listed in skills.json — like npm install
-```
-
-### 5. Keep the registry up to date
-
-```bash
-spm sync    # runs git pull in ~/.spm
-```
-
-### All commands
-
-```
-spm install               Install all skills from skills.json
-spm install <skill>       Install a skill and its dependencies
-spm i / spm i <skill>     Alias for install
-spm remove <skill>        Remove a skill from the project
-spm rm <skill>            Alias for remove
-spm sync                  Pull latest skills from remote registry
-spm list                  List skills installed in current project
-spm list --global         List all available skills in ~/.spm
-spm search <query>        Search skills by name or description
-spm info <skill>          Show skill details
-```
-
----
-
-## Available skills
-
-Over 500 skills across categories including AI agents, frontend, backend, cloud, security, databases, testing, and more. Some highlights:
-
-| Skill | Description |
-|---|---|
-| `figma-implement-design` | Takes a Figma file and builds the full app — tokens, UI kit, pixel-faithful layout |
-| `figma-mcp` | Read and inspect Figma files via MCP |
-| `frontend-design` | Production-grade frontend interfaces with high design quality |
-| `react-best-practices` | Curated React performance and patterns rules |
-| `postgres-best-practices` | Postgres query, schema, and connection best practices |
-| `sentry-mcp` | Fetch and triage Sentry issues directly from the agent |
-| `loki-mode` | Autonomous agent mode for complex multi-step tasks |
-| `mcp-builder` | Build and evaluate MCP servers |
-
-Run `spm list --global` to see everything available after cloning.
-
----
-
-## How skills work
-
-When the agent receives a task, the `AGENTS.md` instructs it to:
-
-1. Read `skills.json` for a quick index of installed skills and their metadata
-2. Run `ls .agents/skills/` to confirm what's available
-3. `grep` for skills relevant to the task
-4. Read the matching `SKILL.md` files before writing any code
-5. Proceed with its own judgment if no relevant skill is found
-
-Skills are intentionally project-local — you only include what your project needs, and the folder can safely live in `.gitignore`.
-
-### skills.json
-
-`skills.json` is the source of truth for what's installed. Beyond tracking skill names and dependencies, it supports a `notes` field per skill — a place for the agent to accumulate project-specific context across sessions:
+Add to your MCP config (e.g. `claude_desktop_config.json`):
 
 ```json
 {
-  "path": ".agents/skills",
-  "skills": {
-    "figma-mcp": {
-      "enabled": true,
-      "dependencies": [],
-      "env_vars": ["SPM_FIGMA_TOKEN"],
-      "notes": [
-        "main design system file key: aBcDeFgH",
-        "user prefers SVGs inlined, not saved to assets/",
-        "export URLs expire fast — run export and wget in the same command"
-      ]
+  "mcpServers": {
+    "spm": {
+      "command": "python3",
+      "args": ["~/.spm/spm_mcp.py"]
     }
   }
 }
 ```
 
-Notes are written by the agent when it discovers something worth remembering: stack details, errors it has solved, user preferences, project-specific gotchas. They are read at the start of every session to avoid repeating reasoning.
+The server auto-installs its only dependency (`mcp[cli]`) on first run.
 
 ---
 
-## Repo structure
+## CLI reference
 
 ```
-skill-package-manager/
-├── scripts/
-│   ├── spm.py        ← skill package manager CLI
-│   └── check.py      ← validates skill frontmatter
-├── skills/           ← all available skills
-│   ├── figma-mcp/
-│   │   ├── SKILL.md
-│   │   └── .env.example   ← optional: declares required env vars
-│   ├── frontend-design/
-│   │   └── SKILL.md
-│   └── ...
-└── AGENTS.md         ← paste into your project to enable skill discovery
+spm sync                       Pull registry and rebuild index if changed
+spm search <query> [--page N]  Search skills  (prefix terms with - to exclude)
+spm info   <skill>             Show metadata and file tree for a skill
+spm list                       List all skills in the registry
+```
+
+**Examples:**
+
+```bash
+spm sync
+spm search "react state management"
+spm search frontend -azure --page 2
+spm info   react-best-practices
+spm list
+```
+
+### sync
+
+Runs `git pull`. If changes are detected — or if `index.json` is missing — it rebuilds the index automatically. If the registry is already current, it prints index stats and exits.
+
+```
+● Syncing ~/.spm ...
+✓ Already up to date.
+──────────────────────────────────────────────────
+   index    2025-01-05T10:22:11Z  943 skills
+   no changes — index up to date
+```
+
+### search
+
+Scores skills against your query and returns ranked results (5 per page). Name matches score highest, then keywords, then description. Use `-term` to exclude noisy results.
+
+```bash
+spm search "react state"
+spm search postgres -azure -cloud
+spm search "api design" --page 2
+```
+
+### info
+
+Shows full metadata for a skill: description, keywords, dependencies, file tree.
+
+```bash
+spm info postgres-best-practices
 ```
 
 ---
 
-## Contributing
+## MCP server tools
 
-**1 PR = 1 skill.** Keep PRs focused — one new skill or one update to an existing one.
+The MCP server exposes seven tools for progressive skill access. Agents move through levels only as deep as needed — a typical session costs ~400 tokens vs 2000+ loading a full skill file cold.
 
-### Required structure
+```
+skill_search    → find candidates (paginated, ranked)
+skill_info      → frontmatter + file tree, zero content cost
+skill_toc       → heading tree only, up to 5 skills at once
+skill_section   → one section by slug
+skill_get       → full SKILL.md content
+skill_get_file  → any supporting file (references/, scripts/)
+skill_index_status → health check, force reload after sync
+```
+
+### Progressive disclosure flow
+
+```
+agent: skill_search("figma design implementation")
+→ 3 results, page 1 of 2
+
+agent: skill_info("figma-implement-design")
+→ frontmatter + file tree (no content loaded)
+
+agent: skill_toc("figma-implement-design")
+→ heading tree with slugs, dependency TOCs appended
+
+agent: skill_section("figma-implement-design", "phase-3-design-tokens")
+→ only that section
+```
+
+### skill_search
+
+Paginated search across all 900+ skills. Supports negative filtering.
+
+```
+query: "figma design"  matches:4  page:1/2
+
+→ call skill_search(query='figma design', page=2) for more
+
+■ figma-implement-design  (score:14)
+  Full workflow to go from a Figma file to production-ready code...
+
+■ figma-mcp  (score:8)
+  Read and inspect Figma files via MCP...
+```
+
+### skill_toc
+
+Returns the heading tree of one or more skills as addressable slugs. Pass up to 5 IDs in one call to plan your section fetches upfront.
+
+```
+■ figma-implement-design
+
+#phase-1-orient  Phase 1 — Orient
+#phase-2-visual-reference  Phase 2 — Visual reference
+  #phase-3-design-tokens  Phase 3 — Design tokens
+  ...
+
+supporting files:
+  references/advanced-patterns.md
+```
+
+Dependency TOCs are listed but not expanded automatically — the agent requests them explicitly if needed.
+
+### skill_section
+
+Fetches content from one heading to the next heading of equal or higher level. The primary efficiency tool — use it instead of `skill_get` whenever possible.
+
+```bash
+skill_section("figma-implement-design", "phase-3-design-tokens")
+```
+
+### skill_info
+
+Returns frontmatter metadata and file tree with zero content cost. If a `skills.json` exists in the project with `notes` for this skill, they are appended automatically.
+
+---
+
+## How skills work
+
+When the agent receives a task, it uses `skill_search` to find relevant skills, then progressively loads content via `skill_toc` and `skill_section`. The agent fetches `skill_get` only when it needs the full document.
+
+Skills are intentionally independent — you only load what your task needs.
+
+### Skill structure
 
 ```
 skills/
 └── your-skill-name/
     ├── SKILL.md          ← required
-    ├── .env.example      ← required if the skill needs env vars
-    ├── references/       ← optional: extra docs the agent may need
-    └── scripts/          ← optional: helper scripts referenced from SKILL.md
+    ├── .env.example      ← optional: declares required env vars (SPM_ prefix)
+    ├── references/       ← optional: supplementary docs
+    └── scripts/          ← optional: helper scripts
 ```
 
 ### Required frontmatter
@@ -193,38 +234,81 @@ Every `SKILL.md` must start with a YAML frontmatter block:
 ```yaml
 ---
 name: your-skill-name
-description: One or two sentences. When should an agent use this skill? Be specific.
-dependencies: other-skill another-skill   # space-separated, omit if none
+description: One or two sentences. When should an agent use this skill?
+dependencies: other-skill another-skill
+keywords: react ui components typescript
 ---
 ```
 
-`name` and `description` are required. `dependencies` is optional but must be accurate — `spm` uses it to resolve installs.
+`name` and `description` are required. `dependencies` and `keywords` are optional but improve search ranking and dependency resolution.
 
-### Environment variables
+### index.json
 
-If your skill needs secrets or config, include a `.env.example` at the skill root:
+`index.json` is generated by `build_index.py` and is the MCP server's data source. It contains parsed frontmatter for every skill — never full content. Rebuild it after any `spm sync` that pulls changes.
 
-```bash
-SPM_YOUR_TOKEN=    # description of what this is and where to get it
-SPM_YOUR_ORG=      # e.g. your organization slug
+```json
+{
+  "_meta": {
+    "built_at": "2025-01-05T10:22:11Z",
+    "skill_count": 943
+  },
+  "skills": {
+    "frontend-design": {
+      "name": "frontend-design",
+      "description": "...",
+      "keywords": ["react", "ui", "css"],
+      "dependencies": [],
+      "file_tree": ["SKILL.md"],
+      "has_references": false,
+      "has_scripts": false
+    }
+  }
+}
 ```
 
-- All variable names must be prefixed with `SPM_`
-- The `.env.example` is never copied into the user's project — `spm` reads it only to display the setup notice
-- The skill's script must load only the variables declared in its own `ENV_VARS` list, never the full `.env`
+---
 
-### Writing a good `SKILL.md`
+## Contributing
 
-- **Be prescriptive.** Tell the agent exactly what to do, not just what the skill is about.
-- **Cover edge cases.** What should the agent watch out for? What are common mistakes?
-- **Reference, don't duplicate.** If a script or doc belongs in `scripts/` or `references/`, put it there and link to it from `SKILL.md`.
-- **Keep it focused.** One skill = one responsibility. If it's doing two things, split it.
+**1 PR = 1 skill.** Keep PRs focused — one new skill or one update to an existing one.
 
 ### Checklist before opening a PR
 
 - [ ] Folder is inside `skills/` and the name matches `name` in frontmatter
 - [ ] `name` and `description` are present in frontmatter
+- [ ] `keywords` are present (improves MCP search ranking)
 - [ ] `dependencies` lists any skills this one relies on
 - [ ] If the skill needs env vars: `.env.example` exists with `SPM_`-prefixed names
 - [ ] `SKILL.md` gives the agent enough context to act without guessing
 - [ ] No unrelated files included
+
+### Writing a good `SKILL.md`
+
+- **Be prescriptive.** Tell the agent exactly what to do, not just what the skill is about.
+- **Cover edge cases.** What should the agent watch out for? What are common mistakes?
+- **Use headings.** The MCP server exposes skills section by section — well-structured headings make partial loading much more useful.
+- **Reference, don't duplicate.** If content belongs in `references/` or `scripts/`, put it there and link from `SKILL.md`.
+- **Keep it focused.** One skill = one responsibility. If it's doing two things, split it.
+
+### Environment variables
+
+If your skill needs secrets or config, include a `.env.example`:
+
+```bash
+SPM_YOUR_TOKEN=    # your personal access token
+SPM_YOUR_ORG=      # your organization slug
+```
+
+All variable names must be prefixed with `SPM_`. The `.env.example` file is read by `build_index.py` to surface setup notices — it is never copied anywhere.
+
+---
+
+## Available skills
+
+Over 900 skills across categories including AI agents, frontend, backend, cloud, security, databases, testing, and more. Use the CLI or MCP server to browse:
+
+```bash
+spm list                    # all skills
+spm search "your topic"     # ranked search
+spm info <skill>            # details for one skill
+```

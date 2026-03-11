@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""
+build_index.py — Pre-build ~/.spm/index.json from all skill frontmatters.
+Run via: python3 build_index.py
+Called automatically by `spm sync` after git pull.
+
+Output shape per skill:
+{
+  "skill-name": {
+    "name": "skill-name",
+    "description": "...",
+    "keywords": ["react", "ui"],        # from frontmatter if present
+    "dependencies": ["other-skill"],    # from frontmatter if present
+    "file_tree": ["SKILL.md", "references/patterns.md"],
+    "has_references": true,
+    "has_scripts": false
+  }
+}
+"""
+
+import os
+import sys
+import json
+import time
+
+SPM_DIR = os.path.expanduser("~/.spm")
+SKILLS_DIR = os.path.join(SPM_DIR, "skills")
+INDEX_PATH = os.path.join(SPM_DIR, "index.json")
+
+
+# ── Frontmatter parser ────────────────────────────────────────────────────────
+
+def parse_frontmatter(skill_dir: str) -> dict | None:
+    """Parse SKILL.md YAML frontmatter. Returns dict or None if missing/invalid."""
+    skill_md = os.path.join(skill_dir, "SKILL.md")
+    if not os.path.isfile(skill_md):
+        return None
+
+    try:
+        with open(skill_md, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+
+    if not lines or lines[0].strip() != "---":
+        return {}
+
+    data = {}
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            break
+        if ":" in stripped:
+            key, _, value = stripped.partition(":")
+            data[key.strip()] = value.strip()
+
+    return data
+
+
+def parse_list_field(raw: str) -> list[str]:
+    """Parse a space-separated frontmatter field into a list."""
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split() if item.strip()]
+
+
+# ── File tree builder ─────────────────────────────────────────────────────────
+
+def build_file_tree(skill_dir: str) -> list[str]:
+    """Return relative paths of all files in the skill directory."""
+    tree = []
+    for root, dirs, files in os.walk(skill_dir):
+        # Skip hidden dirs
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for fname in sorted(files):
+            if fname == ".env.example":
+                continue
+            abs_path = os.path.join(root, fname)
+            rel = os.path.relpath(abs_path, skill_dir)
+            tree.append(rel)
+    return tree
+
+
+# ── Index builder ─────────────────────────────────────────────────────────────
+
+def build_index(skills_dir: str) -> dict:
+    """Walk skills directory, parse frontmatters, return full index."""
+    if not os.path.isdir(skills_dir):
+        print(f"[build_index] skills dir not found: {skills_dir}", file=sys.stderr)
+        return {}
+
+    skill_dirs = sorted(
+        d for d in os.listdir(skills_dir)
+        if os.path.isdir(os.path.join(skills_dir, d)) and not d.startswith(".")
+    )
+
+    index = {}
+    skipped = 0
+    total = len(skill_dirs)
+
+    for skill_name in skill_dirs:
+        skill_dir = os.path.join(skills_dir, skill_name)
+        fm = parse_frontmatter(skill_dir)
+
+        if fm is None:
+            skipped += 1
+            continue  # No SKILL.md at all
+
+        file_tree = build_file_tree(skill_dir)
+        subdirs = {os.path.dirname(p) for p in file_tree if os.path.dirname(p)}
+
+        entry = {
+            "name":         fm.get("name", skill_name),
+            "description":  fm.get("description", ""),
+            "keywords":     parse_list_field(fm.get("keywords", "")),
+            "dependencies": parse_list_field(fm.get("dependencies", "")),
+            "file_tree":    file_tree,
+            "has_references": "references" in subdirs,
+            "has_scripts":    "scripts"    in subdirs,
+        }
+
+        # Carry any extra frontmatter fields (e.g. license, version, author)
+        known = {"name", "description", "keywords", "dependencies"}
+        extra = {k: v for k, v in fm.items() if k not in known and v}
+        if extra:
+            entry["meta"] = extra
+
+        index[skill_name] = entry
+
+    print(
+        f"[build_index] indexed {len(index)} skills  "
+        f"(skipped {skipped}, total dirs {total})",
+        file=sys.stderr
+    )
+    return index
+
+
+def main():
+    t0 = time.time()
+    print(f"[build_index] scanning {SKILLS_DIR} ...", file=sys.stderr)
+    index = build_index(SKILLS_DIR)
+
+    output = {
+        "_meta": {
+            "built_at":    __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "skill_count": len(index),
+            "spm_dir":     SPM_DIR,
+        },
+        "skills": index,
+    }
+
+    os.makedirs(SPM_DIR, exist_ok=True)
+    with open(INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+
+    elapsed = time.time() - t0
+    print(
+        f"[build_index] wrote {INDEX_PATH}  "
+        f"({len(index)} skills, {elapsed:.2f}s)",
+        file=sys.stderr
+    )
+
+
+if __name__ == "__main__":
+    main()

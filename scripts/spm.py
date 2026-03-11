@@ -1,589 +1,387 @@
 #!/usr/bin/env python3
+"""
+spm — Skill Package Manager CLI
+Commands: sync, search, info, list
+"""
 
 import os
 import sys
 import json
-import shutil
+import re
 import subprocess
-from datetime import datetime, timezone
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-GLOBAL_SKILLS_DIR = os.path.join(os.path.expanduser("~/.spm"), "skills")
-AGENTS_MD = os.path.join(os.path.expanduser("~/.spm"), "AGENTS_FRAGMENT.md")
-SPM_JSON = "skills.json"
-PROJECT_ROOT_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml"]
+SPM_DIR     = os.path.expanduser("~/.spm")
+SKILLS_DIR  = os.path.join(SPM_DIR, "skills")
+INDEX_PATH  = os.path.join(SPM_DIR, "index.json")
+BUILD_INDEX = os.path.join(SPM_DIR, "scripts", "build_index.py")
 
+# ── ANSI colors ───────────────────────────────────────────────────────────────
 
-# ── Project root detection ────────────────────────────────────────────────────
+_NO_COLOR = not sys.stdout.isatty() or bool(os.environ.get("NO_COLOR"))
 
-def find_project_root():
-    """
-    Walk up from cwd to find the project root:
-    1. First looks for an existing skills.json
-    2. Falls back to looking for known project root markers (.git, package.json, etc.)
-    3. If nothing found, uses cwd
-    Returns the absolute path of the project root.
-    """
-    current = os.path.abspath(os.getcwd())
-    drive = os.path.splitdrive(current)[0] + os.sep  # handles Windows too
+def _c(code: str, text: str) -> str:
+    return text if _NO_COLOR else f"\033[{code}m{text}\033[0m"
 
-    # Pass 1: look for existing skills.json
-    path = current
-    while True:
-        if os.path.isfile(os.path.join(path, SPM_JSON)):
-            return path
-        parent = os.path.dirname(path)
-        if parent == path or path == drive:
-            break
-        path = parent
+def green(t):  return _c("32", t)
+def red(t):    return _c("31", t)
+def yellow(t): return _c("33", t)
+def cyan(t):   return _c("36", t)
+def bold(t):   return _c("1",  t)
+def dim(t):    return _c("2",  t)
 
-    # Pass 2: look for project root markers
-    path = current
-    while True:
-        for marker in PROJECT_ROOT_MARKERS:
-            if os.path.exists(os.path.join(path, marker)):
-                return path
-        parent = os.path.dirname(path)
-        if parent == path or path == drive:
-            break
-        path = parent
+OK   = green("✓")
+FAIL = red("✗")
+WARN = yellow("!")
+BULL = cyan("●")
+DASH = dim("─")
 
-    # Fallback: use cwd
-    return current
+# ── Index helpers ─────────────────────────────────────────────────────────────
 
+def _load_index() -> tuple[dict, dict]:
+    if not os.path.isfile(INDEX_PATH):
+        return {}, {"error": f"index not found at {INDEX_PATH}"}
+    try:
+        with open(INDEX_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return raw.get("skills", {}), raw.get("_meta", {})
+    except Exception as e:
+        return {}, {"error": str(e)}
 
-# ── Frontmatter parser ────────────────────────────────────────────────────────
+def _index_ok() -> bool:
+    _, meta = _load_index()
+    return "error" not in meta
 
-def parse_frontmatter(skill_dir):
-    """Parse SKILL.md frontmatter. Returns dict or None."""
+# ── Frontmatter parser (fallback when index missing) ─────────────────────────
+
+def _parse_frontmatter(skill_dir: str) -> dict:
     skill_md = os.path.join(skill_dir, "SKILL.md")
     if not os.path.isfile(skill_md):
-        return None
-
-    with open(skill_md, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
+        return {}
+    try:
+        with open(skill_md, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return {}
     if not lines or lines[0].strip() != "---":
         return {}
-
     data = {}
     for line in lines[1:]:
-        stripped = line.strip()
-        if stripped == "---":
+        s = line.strip()
+        if s == "---":
             break
-        if ":" in stripped:
-            key, _, value = stripped.partition(":")
-            data[key.strip()] = value.strip()
-
+        if ":" in s:
+            k, _, v = s.partition(":")
+            data[k.strip()] = v.strip()
     return data
 
+# ── Scoring ───────────────────────────────────────────────────────────────────
 
-def get_dependencies(skill_dir):
-    """Return list of dependency skill names from frontmatter."""
-    fm = parse_frontmatter(skill_dir)
-    if not fm or "dependencies" not in fm:
-        return []
-    raw = fm["dependencies"].strip()
-    if not raw:
-        return []
-    return [d.strip() for d in raw.split() if d.strip()]
+def _parse_query(query: str) -> tuple[list, list]:
+    tokens, negatives = [], []
+    for part in query.lower().split():
+        if part.startswith("-") and len(part) > 1:
+            negatives.append(part[1:])
+        else:
+            tokens.append(part)
+    return tokens, negatives
 
+def _score(entry: dict, tokens: list, negatives: list) -> int:
+    name = entry.get("name", "").lower()
+    desc = entry.get("description", "").lower()
+    kws  = [k.lower() for k in entry.get("keywords", [])]
+    deps = [d.lower() for d in entry.get("dependencies", [])]
 
-# ── .env.example helpers ──────────────────────────────────────────────────────
+    for neg in negatives:
+        if neg in name or neg in desc or any(neg in k for k in kws):
+            return -1
 
-def parse_env_example(skill_dir):
-    """
-    Parse .env.example from a skill directory.
-    Returns a list of (key, comment) tuples, or an empty list if not found.
-    Comment is the inline comment after #, or empty string if none.
-    """
-    env_example = os.path.join(skill_dir, ".env.example")
-    if not os.path.isfile(env_example):
-        return []
-
-    entries = []
-    with open(env_example, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            # Skip blank lines and pure comment lines
-            if not stripped or stripped.startswith("#"):
-                continue
-            # Split key from inline comment
-            if "#" in stripped:
-                var_part, _, comment = stripped.partition("#")
-                key = var_part.strip().split("=")[0].strip()
-                comment = comment.strip()
-            else:
-                key = stripped.split("=")[0].strip()
-                comment = ""
-            if key:
-                entries.append((key, comment))
-
-    return entries
-
-
-def notify_env_vars(skill_name, env_vars, root):
-    """
-    Print a clear notice listing the env vars required by the skill.
-    Does NOT write anything to disk — the user handles their .env.
-    """
-    print(f"\n  ⚠️  '{skill_name}' requires environment variables.")
-    print(f"  Add the following to your project's .env:\n")
-    for key, comment in env_vars:
-        suffix = f"  # {comment}" if comment else ""
-        print(f"    {key}={suffix}")
-    print()
-
-
-# ── skills.json helpers ───────────────────────────────────────────────────────
-
-def load_spm_json():
-    """Load skills.json from the project root."""
-    root = find_project_root()
-    spm_path = os.path.join(root, SPM_JSON)
-    if not os.path.isfile(spm_path):
-        return None, root
-    with open(spm_path, "r", encoding="utf-8") as f:
-        return json.load(f), root
-
-
-def save_spm_json(data, root):
-    """Save skills.json to the project root."""
-    spm_path = os.path.join(root, SPM_JSON)
-    with open(spm_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-
-
-def init_spm_json(root):
-    """Create skills.json in the project root if it doesn't exist."""
-    spm_path = os.path.join(root, SPM_JSON)
-    if not os.path.isfile(spm_path):
-        data = {
-            "path": ".agents/skills",
-            "skills": {}
-        }
-        save_spm_json(data, root)
-        print(f"✅ Created {SPM_JSON} in {root}")
-        return data
-    data, _ = load_spm_json()
-    if data is None:
-        data = {"path": ".agents/skills", "skills": {}}
-        save_spm_json(data, root)
-    return data
-
-
+    score = 0
+    for tok in tokens:
+        if tok == name:                              score += 10
+        if tok in name.split("-"):                   score += 4
+        if any(tok == k  for k in kws):              score += 5
+        if any(tok in k  for k in kws):              score += 2
+        if tok in name:                              score += 3
+        if tok in re.findall(r'\w+', desc):          score += 1
+        if tok in desc:                              score += 1
+        if any(tok in d  for d in deps):             score += 1
+    return score
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
-def cmd_install(skill_name=None):
-    """Install a skill and its dependencies, or all skills from skills.json if no name given."""
-    root = find_project_root()
-    data, _ = load_spm_json()
-
-    if root != os.path.abspath(os.getcwd()):
-        print(f"📂 Project root: {root}")
-
-    # No skill name — install all from skills.json (like npm install)
-    if skill_name is None:
-        if data is None or not data.get("skills"):
-            print(f"❌ No {SPM_JSON} found or it has no skills listed.")
-            print(f"   Run 'spm install <skill>' to add a skill first.")
-            return
-        skills_path = data.get("path", ".agents/skills")
-        names = list(data["skills"].keys())
-        print(f"📦 Installing {len(names)} skill(s) from {SPM_JSON}...\n")
-        for name in names:
-            _install_skill(name, data, skills_path, required_by=None, root=root)
-        save_spm_json(data, root)
-        return
-
-    if data is None:
-        data = init_spm_json(root)
-    skills_path = data.get("path", ".agents/skills")
-    _install_skill(skill_name, data, skills_path, required_by=None, root=root)
-    save_spm_json(data, root)
-
-
-def _install_skill(skill_name, data, skills_path, required_by, root):
-    """Recursively install a skill and its dependencies."""
-    src = os.path.join(GLOBAL_SKILLS_DIR, skill_name)
-
-    if not os.path.isdir(src):
-        print(f"❌ Skill '{skill_name}' not found in {GLOBAL_SKILLS_DIR}")
-        print(f"   Run 'spm sync' to update the global registry.")
-        return False
-
-    # Validate required frontmatter
-    fm = parse_frontmatter(src)
-    if fm is None:
-        print(f"❌ '{skill_name}' has no SKILL.md — skipping")
-        return False
-    if "name" not in fm or "description" not in fm:
-        print(f"⚠️  '{skill_name}' is missing required frontmatter fields (name, description) — skipping")
-        return False
-
-    already_installed = skill_name in data["skills"]
-
-    # Install dependencies first
-    deps = get_dependencies(src)
-    for dep in deps:
-        if dep not in data["skills"]:
-            print(f"   📦 Installing dependency: {dep}")
-            _install_skill(dep, data, skills_path, required_by=skill_name, root=root)
-        else:
-            # Already installed — make sure required_by is updated
-            _add_required_by(data, dep, skill_name)
-
-    # Copy skill to project, excluding .env.example
-    dest = os.path.join(root, skills_path, skill_name)
-    if os.path.exists(dest):
-        shutil.rmtree(dest)
-    shutil.copytree(src, dest, ignore=shutil.ignore_patterns(".env.example"))
-
-    # Notify about required env vars (after copy, before summary line)
-    env_vars = parse_env_example(src)
-    if env_vars:
-        notify_env_vars(skill_name, env_vars, root)
-
-    # Update skills.json entry
-    entry = data["skills"].get(skill_name, {})
-    entry["dependencies"] = deps
-
-    # Track whether this skill requires env vars
-    if env_vars:
-        entry["env_vars"] = [key for key, _ in env_vars]
-    else:
-        entry.pop("env_vars", None)
-
-    if required_by:
-        rb = entry.get("required_by", [])
-        if required_by not in rb:
-            rb.append(required_by)
-        entry["required_by"] = rb
-    elif "required_by" in entry:
-        # Explicitly installed — remove required_by if it was there
-        del entry["required_by"]
-
-    data["skills"][skill_name] = entry
-
-    if already_installed:
-        print(f"🔄 Reinstalled: {skill_name}")
-    else:
-        print(f"✅ Installed:   {skill_name}")
-
-    return True
-
-
-def _add_required_by(data, skill_name, requester):
-    """Add requester to skill's required_by list."""
-    if skill_name not in data["skills"]:
-        return
-    entry = data["skills"][skill_name]
-    rb = entry.get("required_by", [])
-    if requester not in rb:
-        rb.append(requester)
-    entry["required_by"] = rb
-
-
-def cmd_remove(skill_name):
-    """Remove a skill from the project."""
-    data, root = load_spm_json()
-    if not data:
-        print(f"❌ No {SPM_JSON} found. Are you in a project directory?")
-        return
-
-    if skill_name not in data["skills"]:
-        print(f"❌ Skill '{skill_name}' is not installed in this project.")
-        return
-
-    # Check if other skills depend on this one
-    dependents = [
-        s for s, info in data["skills"].items()
-        if skill_name in info.get("dependencies", []) and s != skill_name
-    ]
-    if dependents:
-        print(f"⚠️  Cannot remove '{skill_name}' — required by: {', '.join(dependents)}")
-        print(f"   Remove those skills first, or they will break.")
-        return
-
-    skills_path = data.get("path", ".agents/skills")
-    dest = os.path.join(root, skills_path, skill_name)
-
-    if os.path.exists(dest):
-        shutil.rmtree(dest)
-
-    # Clean up required_by references in dependencies
-    for dep in data["skills"][skill_name].get("dependencies", []):
-        if dep in data["skills"]:
-            rb = data["skills"][dep].get("required_by", [])
-            if skill_name in rb:
-                rb.remove(skill_name)
-            if not rb:
-                data["skills"][dep].pop("required_by", None)
-            else:
-                data["skills"][dep]["required_by"] = rb
-
-    del data["skills"][skill_name]
-    save_spm_json(data, root)
-    print(f"🗑️  Removed: {skill_name}")
-
-
 def cmd_sync():
-    """Pull latest skills from the remote registry."""
-    repo_dir = os.path.expanduser("~/.spm")
-    if not os.path.isdir(repo_dir):
-        print(f"❌ Registry not found: {repo_dir}")
-        print(f"   Clone your skills repo there first:")
-        print(f"   git clone <your-repo> {repo_dir}")
-        return
+    if not os.path.isdir(SPM_DIR):
+        print(f"{FAIL} Registry not found: {SPM_DIR}")
+        print(f"   Clone first:  git clone <repo> {SPM_DIR}")
+        sys.exit(1)
 
-    print(f"🔄 Syncing {repo_dir} ...")
+    print(f"{BULL} Syncing {dim(SPM_DIR)} ...")
+
     result = subprocess.run(
-        ["git", "pull"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True
+        ["git", "pull", "--ff-only"],
+        cwd=SPM_DIR, capture_output=True, text=True,
     )
-    if result.returncode == 0:
-        print(f"✅ {result.stdout.strip()}")
-    else:
-        print(f"❌ Sync failed:\n{result.stderr.strip()}")
 
+    if result.returncode != 0:
+        print(f"{FAIL} git pull failed\n{red(result.stderr.strip())}")
+        sys.exit(1)
 
+    out = result.stdout.strip()
+    already_current = "Already up to date" in out or "Already up-to-date" in out
 
-def cmd_get(resource):
-    """Get a resource from the spm registry."""
-    if resource != "agents":
-        print(f"❌ Unknown resource: '{resource}'")
-        print(f"   Available: agents")
-        return
-
-    if not os.path.isfile(AGENTS_MD):
-        print(f"❌ AGENTS.md not found at {AGENTS_MD}")
-        print(f"   Run 'spm sync' to update the registry.")
-        return
-
-    content = open(AGENTS_MD, "r", encoding="utf-8").read()
-
-    # Try clipboard — pbcopy (macOS) → xclip → xsel → wl-copy (Linux)
-    copied = False
-    for cmd, _ in [
-        (["pbcopy"],                          True),
-        (["xclip", "-selection", "clipboard"], True),
-        (["xsel", "--clipboard", "--input"],   True),
-        (["wl-copy"],                          True),
-    ]:
-        try:
-            result = subprocess.run(cmd, input=content.encode(), capture_output=True)
-            if result.returncode == 0:
-                copied = True
-                break
-        except FileNotFoundError:
-            continue
-
-    if copied:
-        lines = content.count("\n") + 1
-        print(f"📋 AGENTS.md copied to clipboard  ({lines} lines)")
-        print(f"   Paste it into your project root as AGENTS.md")
-    else:
-        # Fallback: print to stdout so the user can pipe it
-        print(content)
-        print(f"\n# ↑ AGENTS.md — no clipboard tool found, printed to stdout", file=sys.stderr)
-        print(f"# Pipe to a file:  spm get agents > AGENTS.md", file=sys.stderr)
-
-def cmd_list(global_flag):
-    """List skills — project or global."""
-    if global_flag:
-        if not os.path.isdir(GLOBAL_SKILLS_DIR):
-            print(f"❌ Global skills directory not found: {GLOBAL_SKILLS_DIR}")
+    if already_current:
+        print(f"{OK} {dim(out)}")
+        if _index_ok():
+            skills, meta = _load_index()
+            print(f"{dim(DASH * 50)}")
+            print(f"   index    {dim(meta.get('built_at', '?'))}  "
+                  f"{cyan(str(meta.get('skill_count', len(skills))))} skills")
+            print(f"   {dim('no changes — index up to date')}")
             return
-        skills = _get_global_skills()
-        print(f"📦 Global skills ({len(skills)} available):\n")
-        for name in sorted(skills):
-            fm = parse_frontmatter(os.path.join(GLOBAL_SKILLS_DIR, name))
-            desc = fm.get("description", "No description") if fm else "No description"
-            if len(desc) > 60:
-                desc = desc[:57] + "..."
-            print(f"  {name:<30} {desc}")
+        print(f"{WARN} index missing — building ...")
     else:
-        data, root = load_spm_json()
-        if not data or not data.get("skills"):
-            print(f"No skills installed. Run 'spm install <skill>'")
-            return
-        skills = data["skills"]
-        print(f"📦 Installed skills ({len(skills)}):\n")
-        for name, info in sorted(skills.items()):
-            deps = info.get("dependencies", [])
-            dep_str = f"  deps: {', '.join(deps)}" if deps else ""
-            rb = info.get("required_by", [])
-            rb_str = f"  required_by: {', '.join(rb)}" if rb else ""
-            env_str = f"  env: {', '.join(info['env_vars'])}" if info.get("env_vars") else ""
-            print(f"  ✅ {name}{dep_str}{rb_str}{env_str}")
+        print(f"{OK} {out}")
+        print(f"{BULL} Changes detected — rebuilding index ...")
 
+    _run_build_index()
 
-def cmd_search(query):
-    """Search global skills by name or description."""
-    if not os.path.isdir(GLOBAL_SKILLS_DIR):
-        print(f"❌ Global skills directory not found: {GLOBAL_SKILLS_DIR}")
+def _run_build_index():
+    if not os.path.isfile(BUILD_INDEX):
+        print(f"{FAIL} build_index.py not found at {BUILD_INDEX}")
+        sys.exit(1)
+
+    result = subprocess.run(
+        [sys.executable, BUILD_INDEX],
+        capture_output=True, text=True,
+    )
+
+    if result.returncode != 0:
+        print(f"{FAIL} build_index failed\n{red(result.stderr.strip())}")
+        sys.exit(1)
+
+    for line in result.stderr.splitlines():
+        if "indexed" in line:
+            # Strip the "[build_index] " prefix
+            msg = re.sub(r'^\[build_index\]\s*', '', line.strip())
+            print(f"{OK} {msg}")
+            break
+    else:
+        print(f"{OK} index rebuilt")
+
+    skills, meta = _load_index()
+    print(f"{dim(DASH * 50)}")
+    print(f"   index    {dim(meta.get('built_at', '?'))}  "
+          f"{cyan(str(meta.get('skill_count', len(skills))))} skills")
+
+def cmd_search(query: str, page: int = 1):
+    skills, meta = _load_index()
+    if not skills:
+        print(f"{FAIL} {meta.get('error', 'index empty')}")
+        print(f"   Run:  spm sync")
+        sys.exit(1)
+
+    tokens, negatives = _parse_query(query)
+    if not tokens:
+        print(f"{FAIL} empty query after negatives")
+        sys.exit(1)
+
+    scored = []
+    for sid, entry in skills.items():
+        s = _score(entry, tokens, negatives)
+        if s > 0:
+            scored.append((s, sid, entry))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    PAGE_SIZE = 5
+    total = len(scored)
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page  = max(1, min(page, pages))
+    start = (page - 1) * PAGE_SIZE
+    chunk = scored[start : start + PAGE_SIZE]
+
+    print(f"\n{bold('search')}  {dim(query)}  "
+          f"{cyan(str(total))} match{'es' if total != 1 else ''}  "
+          f"page {page}/{pages}")
+    print(dim(DASH * 60))
+
+    if not chunk:
+        print(f"  {dim('no results — try broader terms')}")
         return
 
-    query_lower = query.lower()
-    results = []
+    for score_val, sid, entry in chunk:
+        desc = entry.get("description", "")
+        if len(desc) > 110:
+            desc = desc[:107].rsplit(" ", 1)[0] + "..."
+        kws    = entry.get("keywords", [])
+        kw_s   = f"  {dim('[' + ', '.join(kws[:4]) + ']')}" if kws else ""
+        deps   = entry.get("dependencies", [])
+        dep_s  = f"\n     {dim('deps: ' + ', '.join(deps))}" if deps else ""
+        flags  = ""
+        if entry.get("has_references"): flags += green(" r")
+        if entry.get("has_scripts"):    flags += green(" s")
 
-    for skill_name in _get_global_skills():
-        fm = parse_frontmatter(os.path.join(GLOBAL_SKILLS_DIR, skill_name))
-        if not fm:
-            continue
-        name = fm.get("name", skill_name)
-        desc = fm.get("description", "")
-        if query_lower in name.lower() or query_lower in desc.lower():
-            results.append((name, desc))
+        print(f"\n  {BULL} {bold(sid)}{flags}{kw_s}")
+        print(f"     {desc}{dep_s}")
 
-    if not results:
-        print(f"🔍 No skills found matching '{query}'")
+    print(f"\n{dim(DASH * 60)}")
+    hints = []
+    if page < pages:
+        hints.append(f"spm search {query} --page {page + 1}  ({pages - page} more page(s))")
+    hints.append("spm info <skill>  for full details")
+    for h in hints:
+        print(f"  {dim(h)}")
+    print()
+
+def cmd_info(skill_id: str):
+    skills, _ = _load_index()
+    entry = skills.get(skill_id) if skills else None
+
+    if entry is None and os.path.isdir(os.path.join(SKILLS_DIR, skill_id)):
+        fm = _parse_frontmatter(os.path.join(SKILLS_DIR, skill_id))
+        if fm:
+            entry = fm
+
+    if entry is None:
+        close = [s for s in skills if skill_id in s][:4] if skills else []
+        hint  = f"\n  Did you mean: {', '.join(close)}" if close else ""
+        print(f"{FAIL} Skill not found: {bold(skill_id)}{hint}")
+        sys.exit(1)
+
+    print(f"\n{bold(skill_id)}")
+    print(dim(DASH * 60))
+    print(f"  {entry.get('description', dim('no description'))}")
+    print()
+
+    rows = []
+    if entry.get("keywords"):
+        rows.append(("keywords",     ", ".join(entry["keywords"])))
+    if entry.get("dependencies"):
+        rows.append(("dependencies", ", ".join(entry["dependencies"])))
+    if entry.get("has_references"):
+        rows.append(("references",   green("yes")))
+    if entry.get("has_scripts"):
+        rows.append(("scripts",      green("yes")))
+    for k, v in (entry.get("meta") or {}).items():
+        rows.append((k, str(v)))
+
+    if rows:
+        width = max(len(r[0]) for r in rows) + 2
+        for k, v in rows:
+            print(f"  {dim(k.ljust(width))}{v}")
+        print()
+
+    file_tree = entry.get("file_tree", [])
+    if file_tree:
+        print(f"  {dim('files')}")
+        for p in file_tree:
+            print(f"    {dim('○')} {p}")
+        print()
+
+    print(dim(DASH * 60))
+    print(f"  {dim('spm search <query>  to find related skills')}\n")
+
+def cmd_list():
+    skills, meta = _load_index()
+
+    if not skills:
+        if os.path.isdir(SKILLS_DIR):
+            names = sorted(
+                d for d in os.listdir(SKILLS_DIR)
+                if os.path.isdir(os.path.join(SKILLS_DIR, d)) and not d.startswith(".")
+            )
+            print(f"\n{bold('registry')}  {dim('(index missing — run spm sync)')}")
+            print(dim(DASH * 60))
+            for name in names:
+                print(f"  {dim('○')} {name}")
+            print(f"\n  {cyan(str(len(names)))} skills on disk\n")
+        else:
+            print(f"{FAIL} Registry not found. Run: git clone <repo> {SPM_DIR}")
         return
 
-    print(f"🔍 Results for '{query}' ({len(results)} found):\n")
-    for name, desc in sorted(results):
-        if len(desc) > 70:
-            desc = desc[:67] + "..."
-        print(f"  {name:<30} {desc}")
+    built = meta.get("built_at", "?")
+    count = meta.get("skill_count", len(skills))
 
+    print(f"\n{bold('registry')}  {dim(built)}  {cyan(str(count))} skills")
+    print(dim(DASH * 60))
 
-def cmd_info(skill_name):
-    """Show frontmatter info for a skill."""
-    skill_dir = os.path.join(GLOBAL_SKILLS_DIR, skill_name)
-    if not os.path.isdir(skill_dir):
-        print(f"❌ Skill '{skill_name}' not found in {GLOBAL_SKILLS_DIR}")
-        return
+    for sid in sorted(skills):
+        e    = skills[sid]
+        r    = green("r") if e.get("has_references") else dim("·")
+        s    = green("s") if e.get("has_scripts")    else dim("·")
+        deps = len(e.get("dependencies", []))
+        d    = cyan(f"d:{deps}") if deps else dim("   ")
+        print(f"  {dim('○')} {sid:<44} {d}  {r}{s}")
 
-    fm = parse_frontmatter(skill_dir)
-    if not fm:
-        print(f"❌ No valid SKILL.md found for '{skill_name}'")
-        return
+    print(f"\n  {dim('r=references  s=scripts  d:N=dependencies')}")
+    print(f"  {dim('spm info <skill>  for details')}\n")
 
-    print(f"\n📄 {skill_name}\n{'─' * 40}")
-    for key, value in fm.items():
-        print(f"  {key:<15} {value}")
+# ── CLI entry point ───────────────────────────────────────────────────────────
 
-    # Show env vars if present
-    env_vars = parse_env_example(skill_dir)
-    if env_vars:
-        print(f"\n  {'env vars':<15}")
-        for key, comment in env_vars:
-            suffix = f"  # {comment}" if comment else ""
-            print(f"    {key}{suffix}")
+HELP = f"""
+  {bold('spm')} — Skill Package Manager
 
-    # List files in skill dir (excluding .env.example — it's internal)
-    files = []
-    for root, dirs, filenames in os.walk(skill_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        for f in filenames:
-            if f == ".env.example":
-                continue
-            rel = os.path.relpath(os.path.join(root, f), skill_dir)
-            files.append(rel)
+  {dim('Usage:')}  spm <command> [args]
 
-    print(f"\n  {'files':<15} {len(files)}")
-    for f in sorted(files):
-        print(f"    • {f}")
+  {dim('Commands:')}
+    sync                       Pull registry and rebuild index if changed
+    search <query> [--page N]  Search skills  (prefix with - to exclude)
+    info   <skill>             Show metadata and file tree for a skill
+    list                       List all skills in the registry
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _get_global_skills():
-    """Return list of skill names in the global directory."""
-    return [
-        d for d in os.listdir(GLOBAL_SKILLS_DIR)
-        if os.path.isdir(os.path.join(GLOBAL_SKILLS_DIR, d))
-        and not d.startswith(".")
-        and os.path.isfile(os.path.join(GLOBAL_SKILLS_DIR, d, "SKILL.md"))
-    ]
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
-HELP = """
-  spm — Skill Package Manager
-
-  Usage:  spm <command> [args]
-
-  Commands:
-    install               Install all skills from skills.json
-    install <skill>       Install a skill and its dependencies
-    i / i <skill>         Alias for install
-    remove <skill>        Remove a skill from the project
-    rm <skill>            Alias for remove
-    sync                  Pull latest skills from remote registry
-    list                  List skills installed in current project
-    list --global         List all available skills in ~/.skills
-    search <query>        Search skills by name or description
-    info <skill>          Show skill details
-    get agents            Copy AGENTS.md to clipboard
-
-  Examples:
-    spm i figma-mcp
-    spm remove figma-mcp
-    spm search frontend
-    spm list --global
+  {dim('Examples:')}
     spm sync
-    spm get agents
+    spm search "react state management"
+    spm search frontend -azure --page 2
+    spm info   react-best-practices
+    spm list
 """
-
-def print_help():
-    print(HELP)
-
 
 def main():
     args = sys.argv[1:]
 
-    if not args or args[0] in ("-h", "--help"):
-        print_help()
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(HELP)
         return
 
-    command = args[0]
+    cmd  = args[0]
+    rest = args[1:]
 
-    if command in ("install", "i"):
-        cmd_install(args[1] if len(args) > 1 else None)
-
-    elif command in ("remove", "rm"):
-        if len(args) < 2:
-            print("Usage: spm remove <skill>")
-            return
-        cmd_remove(args[1])
-
-    elif command == "sync":
+    if cmd == "sync":
         cmd_sync()
 
-    elif command == "list":
-        global_flag = "--global" in args
-        cmd_list(global_flag)
+    elif cmd == "search":
+        if not rest:
+            print(f"{FAIL} Usage: spm search <query> [--page N]")
+            sys.exit(1)
+        page, parts, i = 1, [], 0
+        while i < len(rest):
+            if rest[i] in ("--page", "-p") and i + 1 < len(rest):
+                try:
+                    page = int(rest[i + 1])
+                except ValueError:
+                    print(f"{FAIL} --page must be a number")
+                    sys.exit(1)
+                i += 2
+            else:
+                parts.append(rest[i])
+                i += 1
+        cmd_search(" ".join(parts), page=page)
 
-    elif command == "search":
-        if len(args) < 2:
-            print("Usage: spm search <query>")
-            return
-        cmd_search(" ".join(args[1:]))
+    elif cmd == "info":
+        if not rest:
+            print(f"{FAIL} Usage: spm info <skill>")
+            sys.exit(1)
+        cmd_info(rest[0])
 
-    elif command == "get":
-        if len(args) < 2:
-            print("Usage: spm get <resource>")
-            print("       spm get agents")
-            return
-        cmd_get(args[1])
-
-    elif command == "info":
-        if len(args) < 2:
-            print("Usage: spm info <skill>")
-            return
-        cmd_info(args[1])
+    elif cmd == "list":
+        cmd_list()
 
     else:
-        print(f"Unknown command: '{command}'")
-        print_help()
-
+        print(f"{FAIL} Unknown command: {bold(cmd)}")
+        print(HELP)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
