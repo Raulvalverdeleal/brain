@@ -1,6 +1,6 @@
 ![br<ai>n cover](assets/cover.png)
 
-# Skill Package Manager
+# Brain
 
 A registry of reusable skills for AI coding agents — Claude, Gemini, Cursor, Copilot, and others — with a token-efficient MCP server for runtime access, and a CLI for registry management.
 
@@ -12,20 +12,20 @@ Each skill is a folder with a `SKILL.md` that tells the agent how to approach a 
 
 ## How it works
 
-Skills live in `~/.brain/skills/`. Agents access them at runtime through an MCP server (`spm_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
+Skills live in `~/.brain/skills/`. Agents access them at runtime through an MCP server (`mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
 
-The CLI (`spm`) handles registry management: syncing from remote and searching for skills.
+The CLI (`brain`) handles registry management: syncing from remote and searching for skills.
 
 ```
 ~/.brain/
-├── spm_mcp.py              ← MCP server (agent access layer)
+├── mcp.py              ← MCP server (agent access layer)
 ├── index.json              ← pre-built frontmatter index
 ├── skills/                 ← all available skills
 │   ├── frontend-design/
 │   │   └── SKILL.md
 │   └── ...
 └── scripts/
-    └── build_index.py      ← called by spm sync to regenerate index.json
+    └── build_index.py      ← called by brain sync to regenerate index.json
 ```
 
 ---
@@ -38,42 +38,36 @@ The CLI (`spm`) handles registry management: syncing from remote and searching f
 git clone https://github.com/Raulvalverdeleal/brain ~/.brain
 ```
 
-### 2. Build the index
+### 2. Install `brain`
+
+`brain` is the CLI for registry management. Make it available globally:
 
 ```bash
-python3 ~/.brain/scripts/build_index.py
+echo 'alias brain="python3 ~/.brain/scripts/brain.py"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### 3. Build the index
+
+```bash
+brain build-index
 ```
 
 This parses all skill frontmatters once and writes `~/.brain/index.json`. The MCP server loads this file at startup instead of scanning hundreds of files — startup goes from seconds to milliseconds.
 
-### 3. Install `spm`
 
-`spm` is the CLI for registry management. Make it available globally:
-
-**Option A — shell alias** (recommended):
-```bash
-echo 'alias spm="python3 ~/.brain/scripts/spm.py"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**Option B — symlink**:
-```bash
-ln -s ~/.brain/scripts/spm.py /usr/local/bin/spm
-chmod +x /usr/local/bin/spm
-```
-
-> `spm` requires Python 3. No dependencies beyond the standard library.
+> `brain` requires Python 3. No dependencies beyond the standard library.
 
 ### 4. Register the MCP server
 
-Add to your MCP config (e.g. `claude_desktop_config.json`):
+Add to your MCP config (e.g. `opencode.json`):
 
 ```json
 {
-  "mcpServers": {
-    "spm": {
+  "mcp": {
+    "brain": {
       "command": "python3",
-      "args": ["~/.brain/spm_mcp.py"]
+      "args": ["~/.brain/mcp.py"]
     }
   }
 }
@@ -86,20 +80,20 @@ The server auto-installs its only dependency (`mcp[cli]`) on first run.
 ## CLI reference
 
 ```
-spm sync                       Pull registry and rebuild index if changed
-spm search <query> [--page N]  Search skills  (prefix terms with - to exclude)
-spm info   <skill>             Show metadata and file tree for a skill
-spm list                       List all skills in the registry
+brain sync                       Pull registry and rebuild index if changed
+brain search <query> [--page N]  Search skills  (prefix terms with - to exclude)
+brain info   <skill>             Show metadata and file tree for a skill
+brain list                       List all skills in the registry
 ```
 
 **Examples:**
 
 ```bash
-spm sync
-spm search "react state management"
-spm search frontend -azure --page 2
-spm info   react-best-practices
-spm list
+brain sync
+brain search "react state management"
+brain search frontend -azure --page 2
+brain info   react-best-practices
+brain list
 ```
 
 ### sync
@@ -119,9 +113,9 @@ Runs `git pull`. If changes are detected — or if `index.json` is missing — i
 Scores skills against your query and returns ranked results (5 per page). Name matches score highest, then keywords, then description. Use `-term` to exclude noisy results.
 
 ```bash
-spm search "react state"
-spm search postgres -azure -cloud
-spm search "api design" --page 2
+brain search "react state"
+brain search postgres -azure -cloud
+brain search "api design" --page 2
 ```
 
 ### info
@@ -129,14 +123,14 @@ spm search "api design" --page 2
 Shows full metadata for a skill: description, keywords, dependencies, file tree.
 
 ```bash
-spm info postgres-best-practices
+brain info postgres-best-practices
 ```
 
 ---
 
 ## MCP server tools
 
-The MCP server exposes seven tools for progressive skill access. Agents move through levels only as deep as needed — a typical session costs ~400 tokens vs 2000+ loading a full skill file cold.
+The MCP server exposes seven tools for progressive skill access. Agents move through levels only as deep as needed — **a typical session costs ~400 tokens vs 2000+** loading a full skill file cold.
 
 ```
 skill_search    → find candidates (paginated, ranked)
@@ -175,9 +169,6 @@ query: "figma design"  matches:4  page:1/2
 
 ■ figma-implement-design  (score:14)
   Full workflow to go from a Figma file to production-ready code...
-
-■ figma-mcp  (score:8)
-  Read and inspect Figma files via MCP...
 ```
 
 ### skill_toc
@@ -224,7 +215,7 @@ Skills are intentionally independent — you only load what your task needs.
 skills/
 └── your-skill-name/
     ├── SKILL.md          ← required
-    ├── .env.example      ← optional: declares required env vars (SPM_ prefix)
+    ├── .env.example      ← optional: declares required env vars (BRAIN_ prefix)
     ├── references/       ← optional: supplementary docs
     └── scripts/          ← optional: helper scripts
 ```
@@ -246,7 +237,7 @@ keywords: react ui components typescript
 
 ### index.json
 
-`index.json` is generated by `build_index.py` and is the MCP server's data source. It contains parsed frontmatter for every skill — never full content. Rebuild it after any `spm sync` that pulls changes.
+`index.json` is generated by `build_index.py` and is the MCP server's data source. It contains parsed frontmatter for every skill — never full content. Rebuild it after any `brain sync` that pulls changes.
 
 ```json
 {
@@ -280,7 +271,7 @@ keywords: react ui components typescript
 - [ ] `name` and `description` are present in frontmatter
 - [ ] `keywords` are present (improves MCP search ranking)
 - [ ] `dependencies` lists any skills this one relies on
-- [ ] If the skill needs env vars: `.env.example` exists with `SPM_`-prefixed names
+- [ ] If the skill needs env vars: `.env.example` exists with `BRAIN_`-prefixed names
 - [ ] `SKILL.md` gives the agent enough context to act without guessing
 - [ ] No unrelated files included
 
@@ -297,11 +288,11 @@ keywords: react ui components typescript
 If your skill needs secrets or config, include a `.env.example`:
 
 ```bash
-SPM_YOUR_TOKEN=    # your personal access token
-SPM_YOUR_ORG=      # your organization slug
+BRAIN_YOUR_TOKEN=    # your personal access token
+BRAIN_YOUR_ORG=      # your organization slug
 ```
 
-All variable names must be prefixed with `SPM_`. The `.env.example` file is read by `build_index.py` to surface setup notices — it is never copied anywhere.
+All variable names must be prefixed with `BRAIN_`. The `.env.example` file is read by `build_index.py` to surface setup notices — it is never copied anywhere.
 
 ---
 
@@ -310,7 +301,14 @@ All variable names must be prefixed with `SPM_`. The `.env.example` file is read
 Over 900 skills across categories including AI agents, frontend, backend, cloud, security, databases, testing, and more. Use the CLI or MCP server to browse:
 
 ```bash
+<<<<<<< Updated upstream
 spm list                    # all skills
 spm search "your topic"     # ranked search
 spm info <skill>            # details for one skill
 ```
+=======
+brain list                    # all skills
+brain search "your topic"     # ranked search
+brain info <skill>            # details for one skill
+```
+>>>>>>> Stashed changes

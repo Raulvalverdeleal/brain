@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-spm_mcp.py — SPM MCP Server
+mcp.py — BRAIN MCP Server
 Progressive skill access: search → info → toc → section → full skill
 
-Place at ~/.spm/spm_mcp.py and register in your MCP config.
-Requires ~/.spm/index.json (run build_index.py first, or spm sync).
+Place at ~/.brain/mcp.py and register in your MCP config.
+Requires ~/.brain/index.json (run build_index.py first, or brain sync).
 """
 
 import subprocess
@@ -21,7 +21,7 @@ def _ensure_deps():
         except ImportError:
             missing.append(pkg)
     if missing:
-        print(f"[spm_mcp] installing: {' '.join(missing)}", file=sys.stderr)
+        print(f"[brain_mcp] installing: {' '.join(missing)}", file=sys.stderr)
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "--quiet",
              "--break-system-packages"] + missing
@@ -40,9 +40,9 @@ from pydantic import BaseModel, Field, ConfigDict
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-SPM_DIR    = os.path.expanduser("~/.spm")
-SKILLS_DIR = os.path.join(SPM_DIR, "skills")
-INDEX_PATH = os.path.join(SPM_DIR, "index.json")
+BRAIN_DIR    = os.path.expanduser("~/.brain")
+SKILLS_DIR = os.path.join(BRAIN_DIR, "skills")
+INDEX_PATH = os.path.join(BRAIN_DIR, "index.json")
 
 PAGE_SIZE = 3       # skills per search page
 MAX_DESC  = 160     # chars shown in search results
@@ -237,7 +237,7 @@ def _get_related(skill_id: str, limit: int = 3) -> list[str]:
 
 # ── MCP Server ────────────────────────────────────────────────────────────────
 
-mcp = FastMCP("spm")
+mcp = FastMCP("brain")
 
 
 # ── Input models ─────────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ async def skill_search(params: SearchInput) -> str:
 
     if not _INDEX:
         err = _INDEX_META.get("error", "index empty")
-        return f"error: {err}\nRun: python3 ~/.spm/scripts/build_index.py"
+        return f"error: {err}\nRun: python3 ~/.brain/scripts/build_index.py"
 
     tokens, negatives = _parse_query(params.query)
     if not tokens:
@@ -408,7 +408,7 @@ async def skill_toc(params: MultiSkillTocInput) -> str:
 
         skill_md_path = _skill_md(skill_id)
         if not os.path.isfile(skill_md_path):
-            blocks.append(f"[{skill_id}] SKILL.md not on disk — run: spm install {skill_id}")
+            blocks.append(f"[{skill_id}] SKILL.md not on disk — run: brain install {skill_id}")
             continue
 
         with open(skill_md_path, "r", encoding="utf-8", errors="replace") as f:
@@ -461,7 +461,7 @@ async def skill_section(params: SectionInput) -> str:
     """
     skill_md_path = _skill_md(params.skill_id)
     if not os.path.isfile(skill_md_path):
-        return f"SKILL.md not found for '{params.skill_id}' — run: spm install {params.skill_id}"
+        return f"SKILL.md not found for '{params.skill_id}' — run: brain install {params.skill_id}"
 
     with open(skill_md_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
@@ -500,7 +500,7 @@ async def skill_get(params: SkillIdInput) -> str:
     """
     skill_md_path = _skill_md(params.skill_id)
     if not os.path.isfile(skill_md_path):
-        return f"SKILL.md not found for '{params.skill_id}' — run: spm install {params.skill_id}"
+        return f"SKILL.md not found for '{params.skill_id}' — run: brain install {params.skill_id}"
 
     with open(skill_md_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
@@ -550,23 +550,23 @@ async def skill_get_file(params: FileInput) -> str:
 async def skill_index_status(params: IndexStatusInput) -> str:
     """Check index status: skill count, build date, and optionally reload from disk.
 
-    Use reload=true if you've just run spm sync and want fresh data.
+    Use reload=true if you've just run brain sync and want fresh data.
     """
     _load_index(force=params.reload)
 
     if not _INDEX:
         err = _INDEX_META.get("error", "index empty")
-        return f"index not loaded: {err}\nRun: python3 ~/.spm/scripts/build_index.py"
+        return f"index not loaded: {err}\nRun: python3 ~/.brain/scripts/build_index.py"
 
     built_at = _INDEX_META.get("built_at", "unknown")
     count    = _INDEX_META.get("skill_count", len(_INDEX))
-    spm_dir  = _INDEX_META.get("spm_dir", SPM_DIR)
+    brain_dir  = _INDEX_META.get("brain_dir", BRAIN_DIR)
 
     lines = [
         f"index: OK",
         f"skills:    {count}",
         f"built_at:  {built_at}",
-        f"spm_dir:   {spm_dir}",
+        f"brain_dir:   {brain_dir}",
         f"index:     {INDEX_PATH}",
     ]
 
@@ -588,7 +588,7 @@ if __name__ == "__main__":
     count = len(_INDEX)
     err   = _INDEX_META.get("error")
     if err:
-        print(f"[spm_mcp] warning: {err}", file=sys.stderr)
+        print(f"[brain_mcp] warning: {err}", file=sys.stderr)
     else:
-        print(f"[spm_mcp] index loaded — {count} skills", file=sys.stderr)
+        print(f"[brain_mcp] index loaded — {count} skills", file=sys.stderr)
     mcp.run()

@@ -12,10 +12,10 @@
                 "fastmcp",
                 "--with",
                 "python-dotenv",
-                "/Users/<your_username>/.spm/mcp/figma/mcp.py"
+                "/Users/<your_username>/.brain/mcp/figma/mcp.py"
             ],
             "environment": {
-                "SPM_FIGMA_TOKEN": "XXXXX"
+                "BRAIN_FIGMA_TOKEN": "XXXXX"
             }
         }
     }

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-build_index.py — Pre-build ~/.spm/index.json from all skill frontmatters.
+build_index.py — Pre-build ~/.brain/index.json from all skill frontmatters.
 Run via: python3 build_index.py
-Called automatically by `spm sync` after git pull.
+Called automatically by `brain sync` after git pull.
 
 Output shape per skill:
 {
@@ -24,9 +24,9 @@ import json
 import time
 import datetime
 
-SPM_DIR = os.path.expanduser("~/.spm")
-SKILLS_DIR = os.path.join(SPM_DIR, "skills")
-INDEX_PATH = os.path.join(SPM_DIR, "index.json")
+BRAIN_DIR = os.path.expanduser("~/.brain")
+SKILLS_DIR = os.path.join(BRAIN_DIR, "skills")
+INDEX_PATH = os.path.join(BRAIN_DIR, "index.json")
 
 
 # ── Frontmatter parser ────────────────────────────────────────────────────────
@@ -146,12 +146,12 @@ def main():
         "_meta": {
             "built_at":    datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             "skill_count": len(index),
-            "spm_dir":     SPM_DIR,
+            "brain_dir":     BRAIN_DIR,
         },
         "skills": index,
     }
 
-    os.makedirs(SPM_DIR, exist_ok=True)
+    os.makedirs(BRAIN_DIR, exist_ok=True)
     with open(INDEX_PATH, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 

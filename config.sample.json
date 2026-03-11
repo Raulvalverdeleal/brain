@@ -1,8 +1,0 @@
-{
-  "mcp": {
-    "spm": {
-      "command": "python3",
-      "args": ["~/.spm/spm_mcp.py"]
-    }
-  }
-}

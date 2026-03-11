@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-spm — Skill Package Manager CLI
+brain — Skill Package Manager CLI
 Commands: sync, search, info, list
 """
 
@@ -12,11 +12,11 @@ import subprocess
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SPM_DIR     = os.path.expanduser("~/.spm")
-SKILLS_DIR  = os.path.join(SPM_DIR, "skills")
-INDEX_PATH  = os.path.join(SPM_DIR, "index.json")
-BUILD_INDEX = os.path.join(SPM_DIR, "scripts", "build_index.py")
-CHECK       = os.path.join(SPM_DIR, "scripts", "check.py")
+BRAIN_DIR     = os.path.expanduser("~/.brain")
+SKILLS_DIR  = os.path.join(BRAIN_DIR, "skills")
+INDEX_PATH  = os.path.join(BRAIN_DIR, "index.json")
+BUILD_INDEX = os.path.join(BRAIN_DIR, "scripts", "build_index.py")
+CHECK       = os.path.join(BRAIN_DIR, "scripts", "check.py")
 
 # ── ANSI colors ───────────────────────────────────────────────────────────────
 
@@ -113,16 +113,16 @@ def _score(entry: dict, tokens: list, negatives: list) -> int:
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def cmd_sync():
-    if not os.path.isdir(SPM_DIR):
-        print(f"{FAIL} Registry not found: {SPM_DIR}")
-        print(f"   Clone first:  git clone <repo> {SPM_DIR}")
+    if not os.path.isdir(BRAIN_DIR):
+        print(f"{FAIL} Registry not found: {BRAIN_DIR}")
+        print(f"   Clone first:  git clone <repo> {BRAIN_DIR}")
         sys.exit(1)
 
-    print(f"{BULL} Syncing {dim(SPM_DIR)} ...")
+    print(f"{BULL} Syncing {dim(BRAIN_DIR)} ...")
 
     result = subprocess.run(
         ["git", "pull", "--ff-only"],
-        cwd=SPM_DIR, capture_output=True, text=True,
+        cwd=BRAIN_DIR, capture_output=True, text=True,
     )
 
     if result.returncode != 0:
@@ -180,7 +180,7 @@ def cmd_search(query: str, page: int = 1):
     skills, meta = _load_index()
     if not skills:
         print(f"{FAIL} {meta.get('error', 'index empty')}")
-        print(f"   Run:  spm sync")
+        print(f"   Run:  brain sync")
         sys.exit(1)
 
     tokens, negatives = _parse_query(query)
@@ -229,8 +229,8 @@ def cmd_search(query: str, page: int = 1):
     print(f"\n{dim(DASH * 60)}")
     hints = []
     if page < pages:
-        hints.append(f"spm search {query} --page {page + 1}  ({pages - page} more page(s))")
-    hints.append("spm info <skill>  for full details")
+        hints.append(f"brain search {query} --page {page + 1}  ({pages - page} more page(s))")
+    hints.append("brain info <skill>  for full details")
     for h in hints:
         print(f"  {dim(h)}")
     print()
@@ -281,7 +281,7 @@ def cmd_info(skill_id: str):
         print()
 
     print(dim(DASH * 60))
-    print(f"  {dim('spm search <query>  to find related skills')}\n")
+    print(f"  {dim('brain search <query>  to find related skills')}\n")
 
 def cmd_list():
     skills, meta = _load_index()
@@ -292,13 +292,13 @@ def cmd_list():
                 d for d in os.listdir(SKILLS_DIR)
                 if os.path.isdir(os.path.join(SKILLS_DIR, d)) and not d.startswith(".")
             )
-            print(f"\n{bold('registry')}  {dim('(index missing — run spm sync)')}")
+            print(f"\n{bold('registry')}  {dim('(index missing — run brain sync)')}")
             print(dim(DASH * 60))
             for name in names:
                 print(f"  {dim('○')} {name}")
             print(f"\n  {cyan(str(len(names)))} skills on disk\n")
         else:
-            print(f"{FAIL} Registry not found. Run: git clone <repo> {SPM_DIR}")
+            print(f"{FAIL} Registry not found. Run: git clone <repo> {BRAIN_DIR}")
         return
 
     built = meta.get("built_at", "?")
@@ -316,7 +316,7 @@ def cmd_list():
         print(f"  {dim('○')} {sid:<44} {d}  {r}{s}")
 
     print(f"\n  {dim('r=references  s=scripts  d:N=dependencies')}")
-    print(f"  {dim('spm info <skill>  for details')}\n")
+    print(f"  {dim('brain info <skill>  for details')}\n")
 
 
 def cmd_check(props: list | None = None):
@@ -335,9 +335,9 @@ def cmd_check(props: list | None = None):
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 HELP = f"""
-  {bold('spm')} — Skill Package Manager
+  {bold('brain')} — Skill Package Manager
 
-  {dim('Usage:')}  spm <command> [args]
+  {dim('Usage:')}  brain <command> [args]
 
   {dim('Commands:')}
     sync                       Pull registry and rebuild index if changed
@@ -348,14 +348,14 @@ HELP = f"""
     list                       List all skills in the registry
 
   {dim('Examples:')}
-    spm sync
-    spm build-index
-    spm check
-    spm check --props name description keywords
-    spm search "react state management"
-    spm search frontend -azure --page 2
-    spm info   react-best-practices
-    spm list
+    brain sync
+    brain build-index
+    brain check
+    brain check --props name description keywords
+    brain search "react state management"
+    brain search frontend -azure --page 2
+    brain info   react-best-practices
+    brain list
 """
 
 def main():
@@ -384,7 +384,7 @@ def main():
 
     elif cmd == "search":
         if not rest:
-            print(f"{FAIL} Usage: spm search <query> [--page N]")
+            print(f"{FAIL} Usage: brain search <query> [--page N]")
             sys.exit(1)
         page, parts, i = 1, [], 0
         while i < len(rest):
@@ -402,7 +402,7 @@ def main():
 
     elif cmd == "info":
         if not rest:
-            print(f"{FAIL} Usage: spm info <skill>")
+            print(f"{FAIL} Usage: brain info <skill>")
             sys.exit(1)
         cmd_info(rest[0])
 

@@ -6,8 +6,8 @@ Usage:
     python3 check.py [directory] [--props prop1 prop2 ...]
 
 Examples:
-    python3 check.py ~/.spm/skills
-    python3 check.py ~/.spm/skills --props name description keywords
+    python3 check.py ~/.brain/skills
+    python3 check.py ~/.brain/skills --props name description keywords
 """
 
 import os

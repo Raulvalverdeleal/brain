@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 figma_mcp.py — Figma MCP Server
-Token read from SPM_FIGMA_TOKEN environment variable.
+Token read from BRAIN_FIGMA_TOKEN environment variable.
 """
 
 import subprocess
@@ -47,9 +47,9 @@ BASE = "https://api.figma.com/v1"
 # ── HTTP ──────────────────────────────────────────────────────────────────────
 
 def _token() -> str:
-    t = os.environ.get("SPM_FIGMA_TOKEN", "")
+    t = os.environ.get("BRAIN_FIGMA_TOKEN", "")
     if not t:
-        raise ValueError("SPM_FIGMA_TOKEN environment variable not set")
+        raise ValueError("BRAIN_FIGMA_TOKEN environment variable not set")
     return t
 
 

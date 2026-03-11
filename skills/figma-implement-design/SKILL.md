@@ -178,8 +178,6 @@ Fix any delta. Re-export a PNG of the implementation if possible and diff visual
 
 | Error | What to do |
 |---|---|
-| `HTTP 403` | `SPM_FIGMA_TOKEN` is wrong or expired — regenerate in Figma account settings |
-| `HTTP 429` | Rate limited — wait 10–15 seconds, then retry; reduce batch size |
 | `no styles defined` | Use node-level value extraction in Phase 4 instead |
 | Node ID not found | You passed a hyphenated ID (`1-2`) — convert to colon (`1:2`) |
 | Response too large | Drop depth by 1 and re-fetch; split into smaller node ID batches |
