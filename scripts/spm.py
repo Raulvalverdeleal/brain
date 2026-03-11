@@ -16,6 +16,7 @@ SPM_DIR     = os.path.expanduser("~/.spm")
 SKILLS_DIR  = os.path.join(SPM_DIR, "skills")
 INDEX_PATH  = os.path.join(SPM_DIR, "index.json")
 BUILD_INDEX = os.path.join(SPM_DIR, "scripts", "build_index.py")
+CHECK       = os.path.join(SPM_DIR, "scripts", "check.py")
 
 # ── ANSI colors ───────────────────────────────────────────────────────────────
 
@@ -317,6 +318,20 @@ def cmd_list():
     print(f"\n  {dim('r=references  s=scripts  d:N=dependencies')}")
     print(f"  {dim('spm info <skill>  for details')}\n")
 
+
+def cmd_check(props: list | None = None):
+    """Validate frontmatter in all SKILL.md files."""
+    if not os.path.isfile(CHECK):
+        print(f"{FAIL} check.py not found at {CHECK}")
+        sys.exit(1)
+
+    argv = [sys.executable, CHECK, SKILLS_DIR]
+    if props:
+        argv += ["--props"] + props
+
+    result = subprocess.run(argv, text=True)
+    sys.exit(result.returncode)
+
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 HELP = f"""
@@ -327,6 +342,7 @@ HELP = f"""
   {dim('Commands:')}
     sync                       Pull registry and rebuild index if changed
     build-index                Rebuild index.json from skills on disk
+    check [--props p1 p2 ...]   Validate frontmatter in all SKILL.md files
     search <query> [--page N]  Search skills  (prefix with - to exclude)
     info   <skill>             Show metadata and file tree for a skill
     list                       List all skills in the registry
@@ -334,6 +350,8 @@ HELP = f"""
   {dim('Examples:')}
     spm sync
     spm build-index
+    spm check
+    spm check --props name description keywords
     spm search "react state management"
     spm search frontend -azure --page 2
     spm info   react-best-practices
@@ -356,6 +374,13 @@ def main():
     elif cmd == "build-index":
         print(f"{BULL} Building index ...")
         _run_build_index()
+
+    elif cmd == "check":
+        props = rest if rest and rest[0] != "--props" else None
+        if "--props" in rest:
+            idx = rest.index("--props")
+            props = rest[idx + 1:] or None
+        cmd_check(props)
 
     elif cmd == "search":
         if not rest:
