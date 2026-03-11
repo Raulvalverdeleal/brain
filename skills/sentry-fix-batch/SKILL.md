@@ -1,7 +1,7 @@
 ---
 name: sentry-fix-batch
 description: Fetch the N most critical Sentry issues and process each one using sentry-fix-issue. Triage each issue and decide whether to fix, ignore, or archive before acting. N defaults to 5.
-dependencies: sentry-mcp sentry-fix-issue
+dependencies: sentry-fix-issue
 ---
 
 # sentry-fix-batch
@@ -16,11 +16,8 @@ Must be on `fix/sentry` branch  before anything else.
 
 ---
 
-## Step 2 — Fetch issues
+## Step 2 — Get issues
 
-```bash
-python3 scripts/sentry_api.py list_issues <n>   # default 5
-```
 Present the ranked list before doing anything:
 
 ```
@@ -61,15 +58,13 @@ After showing the report, ask the user to choose:
 
 ### 3c. Execute
 
+Users decides:
+
 **Fix** → follow `sentry-fix-issue` Steps 4–6 fully for this issue, then continue to next.
 
 **Ignore** → skip, note it in the session summary, continue.
 
-**Archive** →
-```bash
-python3 scripts/sentry_api.py ignore_issue <issue_id>
-```
-Confirm with user first, then continue.
+**Archive** → Confirm with user first, then continue.
 
 ---
 

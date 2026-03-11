@@ -1,7 +1,7 @@
 ---
 name: sentry-fix-issue
 description: Full workflow to fix a single Sentry issue: branch check, triage report, fix, review, and commit. Use when the user provides a Sentry issue ID and wants to resolve it end-to-end.
-dependencies: sentry-mcp systematic-debugging
+dependencies: systematic-debugging
 ---
 
 ## Step 1 — Branch check
@@ -24,10 +24,6 @@ Do not proceed until confirmed.
 ---
 
 ## Step 2 — Fetch issue
-
-```bash
-python3 scripts/sentry_api.py get_issue_details <issue_id>
-```
 
 ---
 
@@ -85,10 +81,6 @@ Events: <count>  Users: <userCount>"
 ```
 
 Then resolve in Sentry — only after user confirms the fix is good:
-
-```bash
-python3 scripts/sentry_api.py resolve_issue <issue_id>
-```
 
 ---
 
