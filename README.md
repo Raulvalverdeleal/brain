@@ -1,3 +1,5 @@
+![br<ai>n cover](assets/brain-cover.png)
+
 # Skill Package Manager
 
 A registry of reusable skills for AI coding agents — Claude, Gemini, Cursor, Copilot, and others — with a token-efficient MCP server for runtime access, and a CLI for registry management.
