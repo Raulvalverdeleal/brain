@@ -1,6 +1,6 @@
 # Skill Package Manager
 
-A registry of AI agent skills with a token-efficient MCP server for runtime access, and a CLI for registry management.
+A registry of reusable skills for AI coding agents — Claude, Gemini, Cursor, Copilot, and others — with a token-efficient MCP server for runtime access, and a CLI for registry management.
 
 Each skill is a folder with a `SKILL.md` that tells the agent how to approach a specific task — what tools to use, what patterns to follow, what to watch out for.
 
@@ -10,12 +10,12 @@ Each skill is a folder with a `SKILL.md` that tells the agent how to approach a 
 
 ## How it works
 
-Skills live in `~/.spm/skills/`. Agents access them at runtime through an MCP server (`spm_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
+Skills live in `~/.brain/skills/`. Agents access them at runtime through an MCP server (`spm_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
 
 The CLI (`spm`) handles registry management: syncing from remote and searching for skills.
 
 ```
-~/.spm/
+~/.brain/
 ├── spm_mcp.py              ← MCP server (agent access layer)
 ├── index.json              ← pre-built frontmatter index
 ├── skills/                 ← all available skills
@@ -33,16 +33,16 @@ The CLI (`spm`) handles registry management: syncing from remote and searching f
 ### 1. Clone the registry
 
 ```bash
-git clone https://github.com/Raulvalverdeleal/skill-package-manager ~/.spm
+git clone https://github.com/Raulvalverdeleal/brain ~/.brain
 ```
 
 ### 2. Build the index
 
 ```bash
-python3 ~/.spm/scripts/build_index.py
+python3 ~/.brain/scripts/build_index.py
 ```
 
-This parses all skill frontmatters once and writes `~/.spm/index.json`. The MCP server loads this file at startup instead of scanning hundreds of files — startup goes from seconds to milliseconds.
+This parses all skill frontmatters once and writes `~/.brain/index.json`. The MCP server loads this file at startup instead of scanning hundreds of files — startup goes from seconds to milliseconds.
 
 ### 3. Install `spm`
 
@@ -50,13 +50,13 @@ This parses all skill frontmatters once and writes `~/.spm/index.json`. The MCP 
 
 **Option A — shell alias** (recommended):
 ```bash
-echo 'alias spm="python3 ~/.spm/scripts/spm.py"' >> ~/.zshrc
+echo 'alias spm="python3 ~/.brain/scripts/spm.py"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 **Option B — symlink**:
 ```bash
-ln -s ~/.spm/scripts/spm.py /usr/local/bin/spm
+ln -s ~/.brain/scripts/spm.py /usr/local/bin/spm
 chmod +x /usr/local/bin/spm
 ```
 
@@ -71,7 +71,7 @@ Add to your MCP config (e.g. `claude_desktop_config.json`):
   "mcpServers": {
     "spm": {
       "command": "python3",
-      "args": ["~/.spm/spm_mcp.py"]
+      "args": ["~/.brain/spm_mcp.py"]
     }
   }
 }
@@ -105,7 +105,7 @@ spm list
 Runs `git pull`. If changes are detected — or if `index.json` is missing — it rebuilds the index automatically. If the registry is already current, it prints index stats and exits.
 
 ```
-● Syncing ~/.spm ...
+● Syncing ~/.brain ...
 ✓ Already up to date.
 ──────────────────────────────────────────────────
    index    2025-01-05T10:22:11Z  943 skills
