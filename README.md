@@ -1,4 +1,4 @@
-![br<ai>n cover](assets/brain-cover.png)
+![br<ai>n cover](assets/cover.png)
 
 # Skill Package Manager
 
