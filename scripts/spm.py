@@ -326,12 +326,14 @@ HELP = f"""
 
   {dim('Commands:')}
     sync                       Pull registry and rebuild index if changed
+    build-index                Rebuild index.json from skills on disk
     search <query> [--page N]  Search skills  (prefix with - to exclude)
     info   <skill>             Show metadata and file tree for a skill
     list                       List all skills in the registry
 
   {dim('Examples:')}
     spm sync
+    spm build-index
     spm search "react state management"
     spm search frontend -azure --page 2
     spm info   react-best-practices
@@ -350,6 +352,10 @@ def main():
 
     if cmd == "sync":
         cmd_sync()
+
+    elif cmd == "build-index":
+        print(f"{BULL} Building index ...")
+        _run_build_index()
 
     elif cmd == "search":
         if not rest:
