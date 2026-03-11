@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 # ── Config ────────────────────────────────────────────────────────────────────
 
 GLOBAL_SKILLS_DIR = os.path.join(os.path.expanduser("~/.spm"), "skills")
-AGENTS_MD = os.path.join(os.path.expanduser("~/.spm"), "AGENTS.md")
+AGENTS_MD = os.path.join(os.path.expanduser("~/.spm"), "AGENTS_FRAGMENT.md")
 SPM_JSON = "skills.json"
 PROJECT_ROOT_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml"]
 
@@ -166,27 +166,13 @@ def init_spm_json(root):
         }
         save_spm_json(data, root)
         print(f"✅ Created {SPM_JSON} in {root}")
+        return data
     data, _ = load_spm_json()
+    if data is None:
+        data = {"path": ".agents/skills", "skills": {}}
+        save_spm_json(data, root)
     return data
 
-
-def ensure_gitignore(skills_path, root):
-    """Add skills path to .gitignore if not already there."""
-    gitignore = os.path.join(root, ".gitignore")
-    entry = f"{skills_path}/"
-
-    if os.path.isfile(gitignore):
-        with open(gitignore, "r") as f:
-            contents = f.read()
-        if entry in contents:
-            return
-        with open(gitignore, "a") as f:
-            f.write(f"\n# spm - skill packages\n{entry}\n")
-    else:
-        with open(gitignore, "w") as f:
-            f.write(f"# spm - skill packages\n{entry}\n")
-
-    print(f"📝 Added {entry} to .gitignore")
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -210,7 +196,6 @@ def cmd_install(skill_name=None):
         print(f"📦 Installing {len(names)} skill(s) from {SPM_JSON}...\n")
         for name in names:
             _install_skill(name, data, skills_path, required_by=None, root=root)
-        ensure_gitignore(skills_path, root)
         save_spm_json(data, root)
         return
 
@@ -218,7 +203,6 @@ def cmd_install(skill_name=None):
         data = init_spm_json(root)
     skills_path = data.get("path", ".agents/skills")
     _install_skill(skill_name, data, skills_path, required_by=None, root=root)
-    ensure_gitignore(skills_path, root)
     save_spm_json(data, root)
 
 
@@ -265,7 +249,6 @@ def _install_skill(skill_name, data, skills_path, required_by, root):
 
     # Update skills.json entry
     entry = data["skills"].get(skill_name, {})
-    entry["enabled"] = True
     entry["dependencies"] = deps
 
     # Track whether this skill requires env vars
@@ -432,13 +415,12 @@ def cmd_list(global_flag):
         skills = data["skills"]
         print(f"📦 Installed skills ({len(skills)}):\n")
         for name, info in sorted(skills.items()):
-            status = "✅" if info.get("enabled") else "⏸️ "
             deps = info.get("dependencies", [])
             dep_str = f"  deps: {', '.join(deps)}" if deps else ""
             rb = info.get("required_by", [])
             rb_str = f"  required_by: {', '.join(rb)}" if rb else ""
             env_str = f"  env: {', '.join(info['env_vars'])}" if info.get("env_vars") else ""
-            print(f"  {status} {name}{dep_str}{rb_str}{env_str}")
+            print(f"  ✅ {name}{dep_str}{rb_str}{env_str}")
 
 
 def cmd_search(query):

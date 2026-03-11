@@ -17,6 +17,7 @@ Tools:
 """
 import os, sys, json, urllib.request, urllib.parse, urllib.error
 from pathlib import Path
+from dotenv import load_dotenv
 
 # ── Env ───────────────────────────────────────────────────────────────────────
 
@@ -51,21 +52,8 @@ def _find_project_root():
     return current
 
 
-def _load_env():
-    env_file = Path(_find_project_root()) / ".env"
-    if not env_file.exists():
-        return
-    declared = {}
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            declared[k.strip()] = v.strip().strip('"').strip("'")
-    for key in ENV_VARS:
-        if key in declared:
-            os.environ.setdefault(key, declared[key])
-
-_load_env()
+env_file = Path(_find_project_root()) / ".env"
+load_dotenv(env_file)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -132,7 +120,7 @@ def parse_link_header(header):
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 def tool_list_tools():
-    return __doc__.strip()
+    return __doc__.strip()  # type: ignore[union-attr]
 
 def tool_discover():
     _, org, _, base_url = _cfg()
@@ -196,7 +184,8 @@ def tool_get_issue_details(issue_id):
             lines.append("EXCEPTION")
             for val in (exc_entry["data"].get("values") or []):
                 lines.append(f'  {val.get("type","")}:{val.get("value","")}')
-                for frame in reversed((val.get("stacktrace") or {}).get("frames") or [])[:5]:
+                frames = (val.get("stacktrace") or {}).get("frames") or []
+                for frame in list(reversed(frames))[:5]:
                     lines.append(f'    {frame.get("filename","")}:{frame.get("lineNo","")}  {frame.get("function","")}')
 
         # Breadcrumbs

@@ -20,9 +20,10 @@ Tools:
   add_code_connect_map    <file_key> <component_id> <name> <code_path> [framework]
 """
 
-import os, sys, json, urllib.request, urllib.parse
+import os, sys, json, urllib.request, urllib.parse, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE = "https://api.figma.com/v1"
 
@@ -59,21 +60,8 @@ def _find_project_root():
     return current
 
 
-def _load_env():
-    env_file = Path(_find_project_root()) / ".env"
-    if not env_file.exists():
-        return
-    declared = {}
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            declared[k.strip()] = v.strip().strip('"').strip("'")
-    for key in ENV_VARS:
-        if key in declared:
-            os.environ.setdefault(key, declared[key])
-
-_load_env()
+env_file = Path(_find_project_root()) / ".env"
+load_dotenv(env_file)
 
 # ── HTTP ──────────────────────────────────────────────────────────────────────
 
@@ -131,7 +119,7 @@ def parallel(*paths):
         futs = [ex.submit(fetch, i, p) for i, p in enumerate(paths)]
         for f in as_completed(futs):
             i, data, err = f.result()
-            results[i] = (data, err)
+            results[i] = (data, err)  # type: ignore[index]
     return results
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
@@ -147,10 +135,28 @@ def prune(node, depth):
         out["childCount"] = len(children)
     return out
 
+def to_hex(color):
+    """Convert Figma color (r,g,b in 0-1) to hex string."""
+    r, g, b = color.get("r", 0), color.get("g", 0), color.get("b", 0)
+    return "#{:02x}{:02x}{:02x}".format(
+        int(r * 255), int(g * 255), int(b * 255)
+    )
+
+def to_typo(style):
+    """Extract typography properties from Figma text style."""
+    return {
+        "family": style.get("fontFamily"),
+        "size": style.get("fontSize"),
+        "weight": style.get("fontWeight"),
+        "lh": style.get("lineHeightPx"),
+        "ls": style.get("letterSpacing"),
+        "case": style.get("textCase"),
+    }
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 def tool_list_tools():
-    return __doc__.strip()
+    return __doc__.strip()  # type: ignore[union-attr]
 
 def tool_get_design_context(file_key):
     results = parallel(
@@ -159,11 +165,11 @@ def tool_get_design_context(file_key):
         f"/files/{file_key}/components",
         f"/files/{file_key}/component_sets",
     )
-    f_data, f_err = results[0]
+    f_data, f_err = results[0]  # type: ignore[assignment]
     if f_err: return f"Error: {f_err}"
-    styles    = (results[1][0] or {}).get("meta",{}).get("styles",[])
-    comp_cnt  = len((results[2][0] or {}).get("meta",{}).get("components",[]))
-    sets_cnt  = len((results[3][0] or {}).get("meta",{}).get("component_sets",[]))
+    styles    = (results[1][0] or {}).get("meta",{}).get("styles",[])  # type: ignore[union-attr]
+    comp_cnt  = len((results[2][0] or {}).get("meta",{}).get("components",[]))  # type: ignore[union-attr]
+    sets_cnt  = len((results[3][0] or {}).get("meta",{}).get("component_sets",[]))  # type: ignore[union-attr]
 
     token_counts = {}
     for s in styles:
@@ -186,9 +192,9 @@ def tool_get_design_context(file_key):
 
 def tool_get_metadata(file_key):
     results = parallel(f"/files/{file_key}?depth=1", f"/files/{file_key}/collaborators")
-    f_data, f_err = results[0]
+    f_data, f_err = results[0]  # type: ignore[assignment]
     if f_err: return f"Error: {f_err}"
-    collabs = (results[1][0] or {}).get("collaborators", [])
+    collabs = (results[1][0] or {}).get("collaborators", [])  # type: ignore[union-attr]
     lines = [
         f_data["name"],
         f'key:      {file_key}',
@@ -286,8 +292,8 @@ def tool_figma_extract_styles(file_key, types_csv=None):
 
 def tool_figma_search_components(file_key, query=None):
     results = parallel(f"/files/{file_key}/components", f"/files/{file_key}/component_sets")
-    comps = (results[0][0] or {}).get("meta",{}).get("components",[])
-    sets  = (results[1][0] or {}).get("meta",{}).get("component_sets",[])
+    comps = (results[0][0] or {}).get("meta",{}).get("components",[])  # type: ignore[union-attr]
+    sets  = (results[1][0] or {}).get("meta",{}).get("component_sets",[])  # type: ignore[union-attr]
     if query:
         q     = query.lower()
         comps = [c for c in comps if q in c["name"].lower()]
@@ -323,9 +329,9 @@ def tool_create_design_system_rules(file_key, format="text"):
         f"/files/{file_key}/components",
         f"/files/{file_key}/component_sets",
     )
-    styles    = (results[0][0] or {}).get("meta",{}).get("styles",[])
-    comps     = (results[1][0] or {}).get("meta",{}).get("components",[])
-    sets      = (results[2][0] or {}).get("meta",{}).get("component_sets",[])
+    styles    = (results[0][0] or {}).get("meta",{}).get("styles",[])  # type: ignore[union-attr]
+    comps     = (results[1][0] or {}).get("meta",{}).get("components",[])  # type: ignore[union-attr]
+    sets      = (results[2][0] or {}).get("meta",{}).get("component_sets",[])  # type: ignore[union-attr]
     fills     = [s for s in styles if s["style_type"]=="FILL"]
     texts     = [s for s in styles if s["style_type"]=="TEXT"]
 
@@ -422,11 +428,11 @@ def tool_generate_figma_design(file_key, spec):
         f"/files/{file_key}/components",
         f"/files/{file_key}/component_sets",
     )
-    styles = (results[0][0] or {}).get("meta",{}).get("styles",[])
+    styles = (results[0][0] or {}).get("meta",{}).get("styles",[])  # type: ignore[union-attr]
     fills  = [s for s in styles if s["style_type"]=="FILL"]
     texts  = [s for s in styles if s["style_type"]=="TEXT"]
-    comps  = [(c["node_id"], c["name"]) for c in (results[1][0] or {}).get("meta",{}).get("components",[])]
-    sets   = [(s["node_id"], s["name"]) for s in (results[2][0] or {}).get("meta",{}).get("component_sets",[])]
+    comps  = [(c["node_id"], c["name"]) for c in (results[1][0] or {}).get("meta",{}).get("components",[])]  # type: ignore[union-attr]
+    sets   = [(s["node_id"], s["name"]) for s in (results[2][0] or {}).get("meta",{}).get("component_sets",[])]  # type: ignore[union-attr]
 
     colors = []
     if fills:
