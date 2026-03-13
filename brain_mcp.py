@@ -237,7 +237,10 @@ def _get_related(skill_id: str, limit: int = 3) -> list[str]:
 
 # ── MCP Server ────────────────────────────────────────────────────────────────
 
-mcp = FastMCP("brain")
+mcp = FastMCP(
+    "brain",
+    instructions="Before starting any task, search for relevant skills using skill_search. Use skill_toc and skill_section to load only what you need."
+)
 
 
 # ── Input models ─────────────────────────────────────────────────────────────
