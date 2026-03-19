@@ -2,11 +2,11 @@
 
 # Brain
 
-A registry of reusable skills for AI coding agents — Claude, Gemini, Cursor, Copilot, and others — with a token-efficient MCP server for runtime access, and a CLI for registry management.
+**Lazy loading for AI coding agent skills.** A token-efficient MCP server that lets agents fetch only the skill sections they need, when they need them — without loading entire skill libraries into context.
 
-Each skill is a folder with a `SKILL.md` that tells the agent how to approach a specific task — what tools to use, what patterns to follow, what to watch out for.
+Each skill is a folder with a `SKILL.md` that tells the agent how to approach a specific task — what tools to use, what patterns to follow, what to watch out for. Skills are loaded progressively via the MCP server, not pulled into context all at once.
 
-**One standard format. Any model. Any IDE.**
+**One standard format. Any model. Any IDE. Zero context bloat.**
 
 ---
 
@@ -27,20 +27,25 @@ Brain used **86% fewer tokens** while producing **26% more output**. The agent f
 
 ## How it works
 
-Skills live in `~/.agents/skills/`. Agents access them at runtime through an MCP server (`brain_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
+Skills live in `~/.agents/skills/` but **agents must never access this directory directly**. Instead, they use the MCP server (`brain_mcp.py`) to fetch only what they need, when they need it, without loading entire files into context.
 
-The CLI (`brain`) handles registry management: syncing from remote and searching for skills.
+**Why this matters:** Loading all skills into context wastes tokens and degrades performance. Brain's progressive disclosure ensures agents fetch only relevant sections — reducing context usage by 86%.
+
+**Security note:** You should deny agent access to `~/.agents/skills` and disable any direct skill-loading tools. Skills must always be accessed via the MCP server to maintain token efficiency.
+
+The CLI (`brain`) and helper script (`skills.sh`) handle skill management: syncing from remote, searching, and organizing skills.
 
 ```
 ~/.brain/
 ├── brain_mcp.py         ← MCP server (agent access layer)
 ├── brain_cli.py         ← CLI tool for registry management
+├── skills.sh            ← Helper script for skill operations
 ├── index.json           ← pre-built frontmatter index
 └── scripts/
     └── build_index.py   ← called by brain sync to regenerate index.json
 
 ~/.agents/
-└── skills/              ← all available skills
+└── skills/              ← all available skills (agents must NOT access directly)
     ├── frontend-design/
     │   └── SKILL.md
     └── ...
@@ -119,6 +124,15 @@ brain sync                       Pull registry and rebuild index if changed
 brain search <query> [--page N]  Search skills  (prefix terms with - to exclude)
 brain info   <skill>             Show metadata and file tree for a skill
 brain list                       List all skills in the registry
+```
+
+You can also use `skills.sh` for quick skill management:
+
+```bash
+skills.sh sync                   # Same as 'brain sync'
+skills.sh search <query>         # Same as 'brain search'
+skills.sh info <skill>           # Same as 'brain info'
+skills.sh list                   # Same as 'brain list'
 ```
 
 **Examples:**
@@ -243,6 +257,20 @@ Returns frontmatter metadata and file tree with zero content cost. If a `skills.
 When the agent receives a task, it uses `skill_search` to find relevant skills, then progressively loads content via `skill_toc` and `skill_section`. The agent fetches `skill_get` only when it needs the full document.
 
 Skills are intentionally independent — you only load what your task needs.
+
+### Access control (important)
+
+**Never let agents access `~/.agents/skills` directly.** Doing so defeats the purpose of lazy loading and wastes tokens by loading all skills into context.
+
+To enforce this:
+
+1. **Deny filesystem access** to `~/.agents/skills` in your agent configuration
+2. **Disable direct skill-loading tools** if your platform has them
+3. **Add to your global AGENTS.md:**
+   ```
+   - Do not access skills via `/Users/fc/.agents/skills` use always brain mcp server instead.
+   ```
+4. **Only expose the Brain MCP server** for skill access — it handles progressive disclosure automatically
 
 ### Skill structure
 
