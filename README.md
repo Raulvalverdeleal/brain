@@ -114,6 +114,20 @@ Or for stdio-based transport:
 
 The server auto-installs its only dependency (`mcp[cli]`) on first run.
 
+### 5. Secure your setup (important)
+
+**Never let agents access `~/.agents/skills` directly.** Doing so defeats lazy loading and wastes tokens by loading all skills into context.
+
+To enforce this:
+
+1. **Deny filesystem access** to `~/.agents/skills` in your agent configuration
+2. **Disable direct skill-loading tools** if your platform has them  
+3. **Add to your global AGENTS.md:**
+   ```
+   - Do not access skills via `/Users/username/.agents/skills` use always brain mcp server instead.
+   ```
+4. **Only expose the Brain MCP server** for skill access — it handles progressive disclosure automatically
+
 ---
 
 ## CLI reference
@@ -248,27 +262,12 @@ When the agent receives a task, it uses `skill_search` to find relevant skills, 
 
 Skills are intentionally independent — you only load what your task needs.
 
-### Access control (important)
-
-**Never let agents access `~/.agents/skills` directly.** Doing so defeats the purpose of lazy loading and wastes tokens by loading all skills into context.
-
-To enforce this:
-
-1. **Deny filesystem access** to `~/.agents/skills` in your agent configuration
-2. **Disable direct skill-loading tools** if your platform has them
-3. **Add to your global AGENTS.md:**
-   ```
-   - Do not access skills via `/Users/fc/.agents/skills` use always brain mcp server instead.
-   ```
-4. **Only expose the Brain MCP server** for skill access — it handles progressive disclosure automatically
-
 ### Skill structure
 
 ```
 ~/.agents/skills/
 └── your-skill-name/
     ├── SKILL.md          ← required
-    ├── .env.example      ← optional: declares required env vars (BRAIN_ prefix)
     ├── references/       ← optional: supplementary docs
     └── scripts/          ← optional: helper scripts
 ```
@@ -281,12 +280,12 @@ Every `SKILL.md` must start with a YAML frontmatter block:
 ---
 name: your-skill-name
 description: One or two sentences. When should an agent use this skill?
-dependencies: other-skill another-skill
 keywords: react ui components typescript
 ---
 ```
 
-`name` and `description` are required. `dependencies` and `keywords` are optional but improve search ranking and dependency resolution.
+`name` and `description` are required. 
+`keywords` is optional but improve search ranking and dependency resolution.
 
 ### index.json
 
@@ -303,7 +302,6 @@ keywords: react ui components typescript
       "name": "frontend-design",
       "description": "...",
       "keywords": ["react", "ui", "css"],
-      "dependencies": [],
       "file_tree": ["SKILL.md"],
       "has_references": false,
       "has_scripts": false
@@ -312,49 +310,6 @@ keywords: react ui components typescript
 }
 ```
 
----
+## TODOS
 
-## Contributing
-
-**1 PR = 1 skill.** Keep PRs focused — one new skill or one update to an existing one.
-
-### Checklist before opening a PR
-
-- [ ] Folder is inside `~/.agents/skills/` and the name matches `name` in frontmatter
-- [ ] `name` and `description` are present in frontmatter
-- [ ] `keywords` are present (improves MCP search ranking)
-- [ ] `dependencies` lists any skills this one relies on
-- [ ] If the skill needs env vars: `.env.example` exists with `BRAIN_`-prefixed names
-- [ ] `SKILL.md` gives the agent enough context to act without guessing
-- [ ] No unrelated files included
-
-### Writing a good `SKILL.md`
-
-- **Be prescriptive.** Tell the agent exactly what to do, not just what the skill is about.
-- **Cover edge cases.** What should the agent watch out for? What are common mistakes?
-- **Use headings.** The MCP server exposes skills section by section — well-structured headings make partial loading much more useful.
-- **Reference, don't duplicate.** If content belongs in `references/` or `scripts/`, put it there and link from `SKILL.md`.
-- **Keep it focused.** One skill = one responsibility. If it's doing two things, split it.
-
-### Environment variables
-
-If your skill needs secrets or config, include a `.env.example`:
-
-```bash
-BRAIN_YOUR_TOKEN=    # your personal access token
-BRAIN_YOUR_ORG=      # your organization slug
-```
-
-All variable names must be prefixed with `BRAIN_`. The `.env.example` file is read by `build_index.py` to surface setup notices — it is never copied anywhere.
-
----
-
-## Available skills
-
-Browse the registry using the CLI or MCP server:
-
-```bash
-brain list                    # all skills
-brain search "your topic"     # ranked search (5 results per page)
-brain info <skill>            # details for one skill
-```
+- [ ] Build index when a skill is added / re-build index on mcp launch.
