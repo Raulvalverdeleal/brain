@@ -16,31 +16,34 @@ Same task, same project, same prompt — API documentation with two skills loade
 
 |                | Brain (MCP) | Raw markdown files |
 |----------------|-------------|--------------------|
-| Context tokens | 24,851      | 26,788             |
-| Cost           | $0.03       | $0.04              |
+| Context tokens | 20,000      | 150,000            |
+| Cost           | $0.03       | $0.24              |
 | Lines added    | 876         | 693                |
 | Lines removed  | 161         | 90                 |
 
-Brain used **7-11% fewer tokens** while producing **26% more output**. The agent fetched only the sections it needed via progressive disclosure — it never loaded the full skill files.
+Brain used **86% fewer tokens** while producing **26% more output**. The agent fetched only the sections it needed via progressive disclosure — it never loaded the full skill files.
 
 ---
 
 ## How it works
 
-Skills live in `~/.brain/skills/`. Agents access them at runtime through an MCP server (`mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
+Skills live in `~/.agents/skills/`. Agents access them at runtime through an MCP server (`brain_mcp.py`) using progressive disclosure — fetching only what they need, when they need it, without loading entire files into context.
 
 The CLI (`brain`) handles registry management: syncing from remote and searching for skills.
 
 ```
 ~/.brain/
-├── mcp.py              ← MCP server (agent access layer)
-├── index.json              ← pre-built frontmatter index
-├── skills/                 ← all available skills
-│   ├── frontend-design/
-│   │   └── SKILL.md
-│   └── ...
+├── brain_mcp.py         ← MCP server (agent access layer)
+├── brain_cli.py         ← CLI tool for registry management
+├── index.json           ← pre-built frontmatter index
 └── scripts/
-    └── build_index.py      ← called by brain sync to regenerate index.json
+    └── build_index.py   ← called by brain sync to regenerate index.json
+
+~/.agents/
+└── skills/              ← all available skills
+    ├── frontend-design/
+    │   └── SKILL.md
+    └── ...
 ```
 
 ---
@@ -58,8 +61,12 @@ git clone https://github.com/Raulvalverdeleal/brain ~/.brain
 `brain` is the CLI for registry management. Make it available globally:
 
 ```bash
-echo 'alias brain="python3 ~/.brain/scripts/brain.py"' >> ~/.zshrc
+# Option 1: Create an alias
+echo 'alias brain="python3 ~/.brain/brain_cli.py"' >> ~/.zshrc
 source ~/.zshrc
+
+# Option 2: Create a symlink in your PATH
+ln -s ~/.brain/brain_cli.py /usr/local/bin/brain
 ```
 
 ### 3. Build the index
@@ -75,7 +82,20 @@ This parses all skill frontmatters once and writes `~/.brain/index.json`. The MC
 
 ### 4. Register the MCP server
 
-Add to your MCP config (e.g. `opencode.json`):
+Add to your MCP config (e.g. `claude_desktop_config.json`, `opencode.json`, etc.):
+
+```json
+{
+  "mcpServers": {
+    "brain": {
+      "command": "python3",
+      "args": ["~/.brain/brain_mcp.py"]
+    }
+  }
+}
+```
+
+Or for stdio-based transport:
 
 ```json
 {
@@ -125,7 +145,7 @@ Runs `git pull`. If changes are detected — or if `index.json` is missing — i
 
 ### search
 
-Scores skills against your query and returns ranked results (5 per page). Name matches score highest, then keywords, then description. Use `-term` to exclude noisy results.
+Scores skills against your query and returns ranked results (3 per page via MCP, 5 per page via CLI). Name matches score highest, then keywords, then description. Use `-term` to exclude noisy results.
 
 ```bash
 brain search "react state"
@@ -175,7 +195,7 @@ agent: skill_section("figma-implement-design", "phase-3-design-tokens")
 
 ### skill_search
 
-Paginated search across all 900+ skills. Supports negative filtering.
+Paginated search across all skills. Returns 3 results per page via MCP server (5 per page via CLI). Supports negative filtering.
 
 ```
 query: "figma design"  matches:4  page:1/2
@@ -227,7 +247,7 @@ Skills are intentionally independent — you only load what your task needs.
 ### Skill structure
 
 ```
-skills/
+~/.agents/skills/
 └── your-skill-name/
     ├── SKILL.md          ← required
     ├── .env.example      ← optional: declares required env vars (BRAIN_ prefix)
@@ -282,7 +302,7 @@ keywords: react ui components typescript
 
 ### Checklist before opening a PR
 
-- [ ] Folder is inside `skills/` and the name matches `name` in frontmatter
+- [ ] Folder is inside `~/.agents/skills/` and the name matches `name` in frontmatter
 - [ ] `name` and `description` are present in frontmatter
 - [ ] `keywords` are present (improves MCP search ranking)
 - [ ] `dependencies` lists any skills this one relies on
@@ -313,10 +333,10 @@ All variable names must be prefixed with `BRAIN_`. The `.env.example` file is re
 
 ## Available skills
 
-Over 900 skills across categories including AI agents, frontend, backend, cloud, security, databases, testing, and more. Use the CLI or MCP server to browse:
+Browse the registry using the CLI or MCP server:
 
 ```bash
 brain list                    # all skills
-brain search "your topic"     # ranked search
+brain search "your topic"     # ranked search (5 results per page)
 brain info <skill>            # details for one skill
 ```
