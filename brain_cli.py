@@ -113,7 +113,7 @@ def _score(entry: dict, tokens: list, negatives: list) -> int:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
-def cmd_sync():
+def cmd_update():
     if not os.path.isdir(BRAIN_DIR):
         print(f"{FAIL} Registry not found: {BRAIN_DIR}")
         print(f"   Clone first:  git clone <repo> {BRAIN_DIR}")
@@ -148,6 +148,7 @@ def cmd_sync():
         print(f"{BULL} Changes detected — rebuilding index ...")
 
     _run_build_index()
+
 
 def _run_build_index():
     if not os.path.isfile(BUILD_INDEX):
@@ -349,8 +350,8 @@ HELP = f"""
     list                       List all skills in the registry
 
   {dim('Examples:')}
+    brain update
     brain sync
-    brain build-index
     brain check
     brain check --props name description keywords
     brain search "react state management"
@@ -369,10 +370,10 @@ def main():
     cmd  = args[0]
     rest = args[1:]
 
-    if cmd == "sync":
-        cmd_sync()
+    if cmd == "update":
+        cmd_update()
 
-    elif cmd == "build-index":
+    elif cmd == "sync":
         print(f"{BULL} Building index ...")
         _run_build_index()
 
